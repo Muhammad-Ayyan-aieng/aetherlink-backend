@@ -1,0 +1,40 @@
+# Core Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.6
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+
+# Environment
+python-dotenv==1.0.0
+httpx==0.26.0
+
+# Security & XSS Protection
+bleach==6.1.0               # ✅ XSS sanitization
+
+# Rate Limiting
+slowapi==0.1.9              # ✅ Brute force protection
+
+# Logging & Monitoring
+loguru==0.7.2               # ✅ Better logging
+sentry-sdk[fastapi]==1.38.0 # ✅ Error tracking
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.26.0
+
+# Development
+black==23.11.0
+isort==5.13.2
