@@ -60,11 +60,11 @@ def enroll_student(
                 detail="Only students can enroll in courses",
             )
         
-        enrollment = enrollment_service.enroll_student(
+        result = enrollment_service.enroll_student(
             student_id=current_user.id,
             course_id=enrollment_data.course_id,
         )
-        return enrollment
+        return result
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -424,22 +424,22 @@ def cancel_enrollment(
 
 
 # ============================================================
-# TEACHER: COURSE ATTENDANCE
+# TEACHER: COURSE ENROLLMENTS
 # ============================================================
 
 @router.get(
-    "/course/{course_id}/attendance",
+    "/course/{course_id}",
     dependencies=[Depends(get_current_teacher_user)],
-    summary="Get course attendance",
-    description="Get attendance summary for a course (teacher).",
+    summary="Get course enrollments",
+    description="Get all enrollments for a course (teacher/admin).",
 )
-def get_course_attendance(
+def get_course_enrollments(
     course_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Get attendance summary for a course.
+    Get all enrollments for a course.
     
     **Teacher or Admin only.**
     
@@ -447,14 +447,21 @@ def get_course_attendance(
     """
     try:
         enrollment_service = EnrollmentService(db)
-        attendance = enrollment_service.get_teacher_course_attendance(
+        course_service = CourseService(db)
+        
+        # Check if teacher owns this course
+        course = course_service.get_course(course_id)
+        if course.teacher_id != current_user.id and current_user.role != UserRole.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to view this course's enrollments",
+            )
+        
+        result = enrollment_service.get_course_enrollments(
             course_id=course_id,
             teacher_id=current_user.id,
         )
-        return {
-            "course_id": course_id,
-            "students": attendance,
-        }
+        return result
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
