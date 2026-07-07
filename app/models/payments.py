@@ -108,9 +108,7 @@ class Payment(Base):
     # CONSTRAINTS
     # ============================================================
     __table_args__ = (
-        # Unique constraint on enrollment_id (one payment per enrollment)
         Index('ix_payments_enrollment', 'enrollment_id', unique=True),
-        # Index for transaction lookups
         Index('ix_payments_transaction', 'transaction_id'),
     )
     
@@ -253,5 +251,4 @@ class Payment(Base):
     def validate_transaction_id(transaction_id: str) -> bool:
         """Validate transaction ID format."""
         import re
-        # Basic validation - alphanumeric, hyphens, underscores
         return bool(re.match(r'^[a-zA-Z0-9\-_]+$', transaction_id)) if transaction_id else True
