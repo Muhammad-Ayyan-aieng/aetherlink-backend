@@ -151,14 +151,18 @@ class MissedSessionResponse(BaseModel):
 # ============================================================
 
 class AttendanceSummary(BaseModel):
-    """Schema for attendance summary for a student."""
-    
-    total_sessions: int = Field(..., description="Total sessions")
-    present: int = Field(..., description="Present sessions")
-    missed: int = Field(..., description="Missed sessions")
-    made_up: int = Field(..., description="Made up sessions")
-    excused: int = Field(..., description="Excused sessions")
-    attendance_percentage: float = Field(..., description="Attendance percentage")
+    student_id: int
+    course_id: Optional[int] = None
+    total_sessions: int = 0
+    present: int = 0
+    absent: int = 0          # ← Add this
+    missed: int = 0
+    made_up: int = 0
+    excused: int = 0         # ← Add this
+    attendance_rate: float = 0.0  # ← Change from attendance_percentage
+    attendance_percentage: float = 0.0  # ← Keep for compatibility
+    missed_count: int = 0
+    missed_can_be_made_up: bool = False
 
 
 # ============================================================
