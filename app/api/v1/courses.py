@@ -5,6 +5,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List, Any
+import logging
 
 from ...core.database import get_db
 from ...core.dependencies import (
@@ -24,6 +25,7 @@ from ...schemas.course import (
 )
 from ...models.user import User, UserRole
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/courses", tags=["Courses"])
 
 
@@ -59,8 +61,30 @@ def get_courses(
             featured=featured,
         )
         
+        # Convert courses to dicts to avoid serialization issues
+        course_list = []
+        for course in result["courses"]:
+            course_list.append({
+                "id": course.id,
+                "title": course.title,
+                "slug": course.slug,
+                "description": course.description,
+                "price": float(course.price) if course.price else 0,
+                "thumbnail": course.thumbnail,
+                "status": course.status.value if course.status else None,
+                "is_featured": course.is_featured,
+                "teacher_id": course.teacher_id,
+                "teacher_name": course.teacher.full_name if course.teacher else None,
+                "total_sessions": course.total_sessions,
+                "meta_title": course.meta_title,
+                "meta_description": course.meta_description,
+                "meta_keywords": course.meta_keywords,
+                "created_at": course.created_at,
+                "updated_at": course.updated_at,
+            })
+        
         return {
-            "courses": result["courses"],
+            "courses": course_list,
             "total": result["total"],
             "page": result["page"],
             "page_size": result["page_size"],
@@ -70,6 +94,12 @@ def get_courses(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Get courses error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching courses: {str(e)}",
         )
 
 
@@ -91,11 +121,40 @@ def search_courses(
     try:
         course_service = CourseService(db)
         courses = course_service.search_courses(query=q)
-        return courses
+        
+        # FIX: Convert SQLAlchemy objects to dictionaries
+        result = []
+        for course in courses:
+            result.append({
+                "id": course.id,
+                "title": course.title,
+                "slug": course.slug,
+                "description": course.description,
+                "price": float(course.price) if course.price else 0,
+                "thumbnail": course.thumbnail,
+                "status": course.status.value if course.status else None,
+                "is_featured": course.is_featured,
+                "teacher_id": course.teacher_id,
+                "teacher_name": course.teacher.full_name if course.teacher else None,
+                "total_sessions": course.total_sessions,
+                "meta_title": course.meta_title,
+                "meta_description": course.meta_description,
+                "meta_keywords": course.meta_keywords,
+                "created_at": course.created_at,
+                "updated_at": course.updated_at,
+            })
+        
+        return result
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Search failed: {str(e)}",
         )
 
 
@@ -123,6 +182,12 @@ def get_course(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Get course error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching course: {str(e)}",
         )
 
 
@@ -165,6 +230,12 @@ def create_course(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Create course error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating course: {str(e)}",
+        )
 
 
 @router.put(
@@ -204,6 +275,12 @@ def update_course(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Update course error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating course: {str(e)}",
+        )
 
 
 @router.delete(
@@ -236,6 +313,12 @@ def delete_course(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Delete course error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting course: {str(e)}",
         )
 
 
@@ -271,6 +354,12 @@ def publish_course(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Publish course error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error publishing course: {str(e)}",
+        )
 
 
 @router.put(
@@ -305,6 +394,12 @@ def archive_course(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Archive course error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error archiving course: {str(e)}",
+        )
 
 
 @router.put(
@@ -338,6 +433,12 @@ def toggle_featured(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Toggle featured error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error toggling featured: {str(e)}",
+        )
 
 
 @router.get(
@@ -365,4 +466,10 @@ def get_teacher_courses(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Get teacher courses error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching teacher courses: {str(e)}",
         )
