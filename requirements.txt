@@ -26,9 +26,9 @@ redis==5.2.1
 aioredis==2.0.1
 async-timeout==5.0.1
 
-# HTTP Client - Pinned to a version compatible with Supabase dependencies
-httpx==0.27.2
-httpcore==1.0.7
+# HTTP Client - Let pip resolve compatible version
+httpx>=0.24,<0.28
+httpcore>=1.0.7
 requests==2.32.3
 
 # Supabase Ecosystem - Versions that are mutually compatible
