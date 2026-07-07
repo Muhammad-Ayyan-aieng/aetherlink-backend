@@ -5,7 +5,7 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func
 from typing import Optional, List, Tuple, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .base import BaseRepository
 from ..models.attendance import Attendance, AttendanceStatus
@@ -66,6 +66,71 @@ class AttendanceRepository(BaseRepository[Attendance]):
             self.db.refresh(attendance)
         return attendance
     
+    def get_by_student(self, student_id: int) -> List[Attendance]:
+        """
+        Get all attendance records for a student.
+        
+        Args:
+            student_id: Student ID
+            
+        Returns:
+            List of attendance records
+        """
+        return self.db.query(Attendance).join(Enrollment).filter(
+            Enrollment.student_id == student_id,
+            Attendance.deleted_at.is_(None)
+        ).order_by(Attendance.created_at.desc()).all()
+    
+    def get_by_student_paginated(
+        self, 
+        student_id: int, 
+        skip: int = 0, 
+        limit: int = 20
+    ) -> Tuple[List[Attendance], int]:
+        """
+        Get paginated attendance records for a student.
+        
+        Args:
+            student_id: Student ID
+            skip: Pagination offset
+            limit: Max results
+            
+        Returns:
+            Tuple of (attendance_records, total_count)
+        """
+        query = self.db.query(Attendance).join(Enrollment).filter(
+            Enrollment.student_id == student_id,
+            Attendance.deleted_at.is_(None)
+        ).order_by(Attendance.created_at.desc())
+        
+        total = query.count()
+        records = query.offset(skip).limit(limit).all()
+        return records, total
+    
+    def get_by_student_and_sessions(
+        self, 
+        student_id: int, 
+        session_ids: List[int]
+    ) -> List[Attendance]:
+        """
+        Get attendance records for a student and specific sessions.
+        
+        Args:
+            student_id: Student ID
+            session_ids: List of session IDs
+            
+        Returns:
+            List of attendance records
+        """
+        if not session_ids:
+            return []
+        
+        return self.db.query(Attendance).join(Enrollment).filter(
+            Enrollment.student_id == student_id,
+            Attendance.session_id.in_(session_ids),
+            Attendance.deleted_at.is_(None)
+        ).all()
+    
     # ============================================================
     # ⭐ MISSED SESSIONS (CRITICAL)
     # ============================================================
@@ -99,6 +164,7 @@ class AttendanceRepository(BaseRepository[Attendance]):
             Course.deleted_at.is_(None)
         ).order_by(Session.date_time.desc()).all()
         
+        now = datetime.now(timezone.utc)
         return [
             {
                 'id': r.id,
@@ -115,7 +181,7 @@ class AttendanceRepository(BaseRepository[Attendance]):
                 'watched_percentage': r.watched_percentage,
                 'watched_recording': r.watched_recording,
                 'can_makeup': r.recording_available and r.recording_url is not None,
-                'days_ago': (datetime.utcnow() - r.date_time).days,
+                'days_ago': (now - r.date_time).days,
                 'made_up_at': r.made_up_at,
                 'status': r.status
             }
@@ -147,6 +213,7 @@ class AttendanceRepository(BaseRepository[Attendance]):
         if student_id:
             query = query.filter(Enrollment.student_id == student_id)
         
+        now = datetime.now(timezone.utc)
         results = query.order_by(Session.date_time.desc()).all()
         
         return [
@@ -163,7 +230,7 @@ class AttendanceRepository(BaseRepository[Attendance]):
                 'recording_available': r.recording_available,
                 'watched_percentage': r.watched_percentage,
                 'can_makeup': r.recording_available and r.recording_url is not None,
-                'days_ago': (datetime.utcnow() - r.date_time).days,
+                'days_ago': (now - r.date_time).days,
                 'status': r.status
             }
             for r in results
@@ -201,7 +268,7 @@ class AttendanceRepository(BaseRepository[Attendance]):
         attendance.status = AttendanceStatus.PRESENT
         if verified_by:
             attendance.verified_by = verified_by
-            attendance.verified_at = datetime.utcnow()
+            attendance.verified_at = datetime.now(timezone.utc)
         if remarks:
             attendance.remarks = remarks
         self.db.commit()
@@ -234,13 +301,13 @@ class AttendanceRepository(BaseRepository[Attendance]):
         """Mark a student as made up."""
         attendance = self.get_or_create(enrollment_id, session_id)
         attendance.status = AttendanceStatus.MADE_UP
-        attendance.made_up_at = datetime.utcnow()
+        attendance.made_up_at = datetime.now(timezone.utc)
         attendance.makeup_method = method
         if notes:
             attendance.makeup_notes = notes
         if verified_by:
             attendance.verified_by = verified_by
-            attendance.verified_at = datetime.utcnow()
+            attendance.verified_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(attendance)
         return attendance
@@ -257,7 +324,7 @@ class AttendanceRepository(BaseRepository[Attendance]):
         attendance.status = AttendanceStatus.EXCUSED
         if verified_by:
             attendance.verified_by = verified_by
-            attendance.verified_at = datetime.utcnow()
+            attendance.verified_at = datetime.now(timezone.utc)
         if remarks:
             attendance.remarks = remarks
         self.db.commit()
@@ -288,13 +355,13 @@ class AttendanceRepository(BaseRepository[Attendance]):
         
         attendance.watched_recording = True
         attendance.watched_percentage = watched_percentage
-        attendance.last_watch_time = datetime.utcnow()
+        attendance.last_watch_time = datetime.now(timezone.utc)
         
         # ⭐ AUTO-MADE-UP: If watched >= 80% and status is MISSED
         status_changed = False
         if watched_percentage >= 80 and attendance.status == AttendanceStatus.MISSED:
             attendance.status = AttendanceStatus.MADE_UP
-            attendance.made_up_at = datetime.utcnow()
+            attendance.made_up_at = datetime.now(timezone.utc)
             attendance.makeup_method = "recording"
             status_changed = True
         
@@ -353,11 +420,9 @@ class AttendanceRepository(BaseRepository[Attendance]):
         
         for email, enrollment_id in student_emails.items():
             if email in participant_emails:
-                # Mark present
                 self.mark_present(enrollment_id, session_id)
                 present_count += 1
             else:
-                # Mark missed
                 self.mark_missed(enrollment_id, session_id)
                 missed_count += 1
                 absent_students.append(email)
@@ -539,3 +604,23 @@ class AttendanceRepository(BaseRepository[Attendance]):
             "attendance_rate": round((present + made_up) / total_students * 100, 2) if total_students > 0 else 0,
             "absent_students": absent_students,
         }
+    def get_by_student(self, student_id: int) -> List[Attendance]:
+        """Get all attendance records for a student."""
+        return self.db.query(Attendance).join(Enrollment).filter(
+            Enrollment.student_id == student_id
+        ).order_by(Attendance.created_at.desc()).all()
+
+    def get_by_student_paginated(
+        self, 
+        student_id: int, 
+        skip: int = 0, 
+        limit: int = 20
+    ) -> Tuple[List[Attendance], int]:
+        """Get paginated attendance records for a student."""
+        query = self.db.query(Attendance).join(Enrollment).filter(
+            Enrollment.student_id == student_id
+        ).order_by(Attendance.created_at.desc())
+        
+        total = query.count()
+        records = query.offset(skip).limit(limit).all()
+        return records, total
