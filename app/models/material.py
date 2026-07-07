@@ -37,6 +37,11 @@ class CourseMaterial(Base):
     mime_type = Column(String(100), nullable=True)          # application/pdf, etc.
     
     # ============================================================
+    # SUPABASE STORAGE
+    # ============================================================
+    storage_path = Column(String(500), nullable=True)       # Path in Supabase Storage
+    
+    # ============================================================
     # LINK INFORMATION
     # ============================================================
     is_link = Column(Boolean, default=False, nullable=False)  # True if it's a link
@@ -126,6 +131,11 @@ class CourseMaterial(Base):
         return self.link_url is not None
     
     @property
+    def has_storage_path(self) -> bool:
+        """Check if material has a storage path."""
+        return self.storage_path is not None
+    
+    @property
     def size_mb(self) -> float:
         """Get file size in MB."""
         if self.file_size:
@@ -155,7 +165,7 @@ class CourseMaterial(Base):
     @staticmethod
     def get_allowed_file_types() -> list:
         """Get list of allowed file types."""
-        return ["pdf", "pptx", "doc", "docx"]
+        return ["pdf", "pptx", "doc", "docx", "png", "jpg", "jpeg", "gif", "webp"]
     
     @staticmethod
     def get_allowed_mime_types() -> dict:
@@ -165,6 +175,11 @@ class CourseMaterial(Base):
             "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "doc": "application/msword",
             "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "gif": "image/gif",
+            "webp": "image/webp",
         }
     
     @staticmethod
