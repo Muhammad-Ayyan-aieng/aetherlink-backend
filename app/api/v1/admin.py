@@ -4,11 +4,14 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_
 from typing import Optional, List, Any
 from datetime import datetime, timedelta
+import logging
 
+# FIX 1: Add missing get_db import
 from ...core.database import get_db
-from ...core.dependencies import get_current_admin_user, rate_limiter, get_current_user
+from ...core.dependencies import get_current_admin_user, get_current_user
 from ...services.user_service import UserService
 from ...services.course_service import CourseService
 from ...services.enrollment_service import EnrollmentService
@@ -16,7 +19,10 @@ from ...services.payment_service import PaymentService
 from ...services.attendance_service import AttendanceService
 from ...services.session_service import SessionService
 from ...models.user import User, UserRole
+# FIX 2: Change 'payment' to 'payments' (plural)
+from ...models.payments import Payment, PaymentStatus, PaymentMethod
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
@@ -45,7 +51,6 @@ def get_dashboard(
         enrollment_service = EnrollmentService(db)
         payment_service = PaymentService(db)
         attendance_service = AttendanceService(db)
-        session_service = SessionService(db)
         
         # User stats
         user_stats = user_service.get_user_stats()
@@ -60,7 +65,6 @@ def get_dashboard(
         payment_stats = payment_service.get_dashboard_stats(current_user.id)
         
         # Attendance stats (overall)
-        # Get all courses and calculate attendance
         courses = course_service.course_repo.get_all()
         total_sessions = 0
         total_attendance = 0
@@ -121,10 +125,16 @@ def get_dashboard(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating dashboard: {str(e)}",
+        )
 
 
 # ============================================================
-# ADMIN: USER MANAGEMENT (FIXED)
+# ADMIN: USER MANAGEMENT
 # ============================================================
 
 @router.get(
@@ -150,19 +160,34 @@ def get_admin_users(
     try:
         user_service = UserService(db)
         
+        if role and role not in ["student", "teacher", "admin"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid role. Must be: student, teacher, admin"
+            )
+        
         active_only = status != "inactive"
         if status == "inactive":
             active_only = False
         
+        role_enum = None
+        if role:
+            try:
+                role_enum = UserRole(role)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid role: {role}"
+                )
+        
         result = user_service.get_users(
             skip=skip,
             limit=limit,
-            role=UserRole(role) if role else None,
+            role=role_enum,
             active_only=active_only,
             search=search,
         )
         
-        # Convert User objects to dictionaries
         user_list = []
         for user in result.get("users", []):
             user_list.append({
@@ -188,15 +213,18 @@ def get_admin_users(
             "page_size": result.get("page_size", limit),
             "total_pages": result.get("total_pages", 0),
         }
-    except ValueError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin users error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching users: {str(e)}",
         )
 
 
 # ============================================================
-# ADMIN: COURSE MANAGEMENT (FIXED)
+# ADMIN: COURSE MANAGEMENT
 # ============================================================
 
 @router.get(
@@ -206,7 +234,7 @@ def get_admin_users(
     description="Get course management data (admin only).",
 )
 def get_admin_courses(
-    status: Optional[str] = Query(None, description="Filter by status"),
+    status: Optional[str] = Query(None, description="Filter by status: draft, published, archived"),
     featured: Optional[bool] = Query(None, description="Filter by featured"),
     search: Optional[str] = Query(None, description="Search by title"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
@@ -222,16 +250,34 @@ def get_admin_courses(
     try:
         course_service = CourseService(db)
         
+        if status and status not in ["draft", "published", "archived"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status. Must be: draft, published, archived"
+            )
+        
+        filters = {}
+        if status:
+            filters["status"] = status
+        if featured is not None:
+            filters["is_featured"] = featured
+        
         if search:
             courses = course_service.search_courses(query=search)
             total = len(courses)
             courses = courses[skip:skip + limit]
         else:
-            courses, total = course_service.course_repo.get_all(skip=skip, limit=limit)
+            courses, total = course_service.course_repo.get_all(skip=skip, limit=limit, **filters)
         
-        # Convert SQLAlchemy models to dictionaries
         course_list = []
         for course in courses:
+            teacher_name = None
+            try:
+                if course.teacher:
+                    teacher_name = course.teacher.full_name
+            except:
+                pass
+            
             course_list.append({
                 "id": course.id,
                 "title": course.title,
@@ -242,7 +288,7 @@ def get_admin_courses(
                 "status": course.status.value if course.status else None,
                 "is_featured": course.is_featured,
                 "teacher_id": course.teacher_id,
-                "teacher_name": course.teacher.full_name if course.teacher else None,
+                "teacher_name": teacher_name,
                 "total_sessions": course.total_sessions,
                 "meta_title": course.meta_title,
                 "meta_description": course.meta_description,
@@ -259,15 +305,18 @@ def get_admin_courses(
             "page_size": limit,
             "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
         }
-    except ValueError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin courses error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching courses: {str(e)}",
         )
 
 
 # ============================================================
-# ADMIN: PAYMENT MANAGEMENT (FIXED)
+# ADMIN: PAYMENT MANAGEMENT
 # ============================================================
 
 @router.get(
@@ -277,7 +326,7 @@ def get_admin_courses(
     description="Get payment management data (admin only).",
 )
 def get_admin_payments(
-    status: Optional[str] = Query(None, description="Filter by status"),
+    status: Optional[str] = Query(None, description="Filter by status: pending, awaiting_verification, verified, rejected, refunded"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
     current_user: User = Depends(get_current_user),
@@ -289,78 +338,75 @@ def get_admin_payments(
     **Admin only.**
     """
     try:
-        payment_service = PaymentService(db)
+        # Validate status if provided
+        valid_statuses = ["pending", "awaiting_verification", "verified", "rejected", "refunded"]
+        if status and status not in valid_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            )
         
-        if status == "pending":
-            pending = payment_service.get_pending_payments(current_user.id)
+        # Build query with PaymentStatus enum
+        query = db.query(Payment)
+        
+        if status:
+            try:
+                status_enum = PaymentStatus(status)
+                query = query.filter(Payment.status == status_enum)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid payment status: {status}"
+                )
+        
+        total = query.count()
+        payments = query.order_by(Payment.created_at.desc()).offset(skip).limit(limit).all()
+        
+        payment_list = []
+        for payment in payments:
+            student_name = None
+            student_email = None
+            try:
+                if payment.student:
+                    student_name = payment.student.full_name
+                    student_email = payment.student.email
+            except:
+                pass
             
-            # Convert to dictionaries
-            payment_list = []
-            for payment in pending:
-                payment_list.append({
-                    "id": payment.id,
-                    "student_id": payment.student_id,
-                    "enrollment_id": payment.enrollment_id,
-                    "amount": float(payment.amount) if payment.amount else 0,
-                    "method": payment.method,
-                    "status": payment.status,
-                    "screenshot_url": payment.screenshot_url,
-                    "transaction_id": payment.transaction_id,
-                    "student_name": payment.student.full_name if payment.student else None,
-                    "student_email": payment.student.email if payment.student else None,
-                    "created_at": payment.created_at,
-                    "updated_at": payment.updated_at,
-                })
-            
-            return {
-                "payments": payment_list,
-                "total": len(pending),
-                "page": 1,
-                "page_size": len(pending),
-                "total_pages": 1,
-            }
-        else:
-            # Get all payments
-            payments = payment_service.payment_repo.get_all()
-            total = payments[1] if isinstance(payments, tuple) else 0
-            payment_list = payments[0] if isinstance(payments, tuple) else payments
-            
-            paginated = payment_list[skip:skip + limit]
-            
-            # Convert to dictionaries
-            payment_dicts = []
-            for payment in paginated:
-                payment_dicts.append({
-                    "id": payment.id,
-                    "student_id": payment.student_id,
-                    "enrollment_id": payment.enrollment_id,
-                    "amount": float(payment.amount) if payment.amount else 0,
-                    "method": payment.method,
-                    "status": payment.status,
-                    "screenshot_url": payment.screenshot_url,
-                    "transaction_id": payment.transaction_id,
-                    "verified_by": payment.verified_by,
-                    "verified_at": payment.verified_at,
-                    "rejected_at": payment.rejected_at,
-                    "rejection_reason": payment.rejection_reason,
-                    "refunded_at": payment.refunded_at,
-                    "student_name": payment.student.full_name if payment.student else None,
-                    "student_email": payment.student.email if payment.student else None,
-                    "created_at": payment.created_at,
-                    "updated_at": payment.updated_at,
-                })
-            
-            return {
-                "payments": payment_dicts,
-                "total": total,
-                "page": skip // limit + 1 if limit > 0 else 1,
-                "page_size": limit,
-                "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
-            }
-    except ValueError as e:
+            payment_list.append({
+                "id": payment.id,
+                "student_id": payment.student_id,
+                "enrollment_id": payment.enrollment_id,
+                "amount": float(payment.amount) if payment.amount else 0,
+                "method": payment.method.value if payment.method else None,
+                "status": payment.status.value if payment.status else None,
+                "screenshot_url": payment.screenshot_url,
+                "transaction_id": payment.transaction_id,
+                "student_name": student_name,
+                "student_email": student_email,
+                "verified_by": payment.verified_by,
+                "verified_at": payment.verified_at,
+                "rejected_at": payment.rejected_at,
+                "rejection_reason": payment.rejection_reason,
+                "refunded_at": payment.refunded_at,
+                "created_at": payment.created_at,
+                "updated_at": payment.updated_at,
+            })
+        
+        return {
+            "payments": payment_list,
+            "total": total,
+            "page": skip // limit + 1 if limit > 0 else 1,
+            "page_size": limit,
+            "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin payments error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching payments: {str(e)}",
         )
 
 
@@ -391,12 +437,27 @@ def get_attendance_report(
         attendance_service = AttendanceService(db)
         course_service = CourseService(db)
         
-        # Parse dates
-        start = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
-        end = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+        start = None
+        end = None
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
         
         if course_id:
-            # Get attendance for specific course
             stats = attendance_service.get_overall_attendance_stats(course_id)
             course = course_service.get_course(course_id)
             
@@ -408,9 +469,9 @@ def get_attendance_report(
                 "total_present": stats.get("total_present", 0),
                 "total_missed": stats.get("total_missed", 0),
                 "total_made_up": stats.get("total_made_up", 0),
+                "generated_at": datetime.utcnow().isoformat(),
             }
         else:
-            # Get attendance for all courses
             courses = course_service.course_repo.get_published()
             results = []
             
@@ -430,16 +491,20 @@ def get_attendance_report(
             return {
                 "courses": results,
                 "total_courses": len(results),
+                "generated_at": datetime.utcnow().isoformat(),
             }
-    except ValueError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Attendance report error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating attendance report: {str(e)}",
         )
 
 
 # ============================================================
-# ADMIN: REVENUE REPORT
+# ADMIN: REVENUE REPORT (FIXED)
 # ============================================================
 
 @router.get(
@@ -459,21 +524,57 @@ def get_revenue_report(
     **Admin only.**
     """
     try:
-        payment_service = PaymentService(db)
+        valid_periods = ["day", "week", "month", "quarter", "year"]
+        if period not in valid_periods:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid period. Must be one of: {', '.join(valid_periods)}"
+            )
         
-        # Get revenue stats
-        stats = payment_service.get_revenue_stats(current_user.id)
-        revenue_by_course = payment_service.get_revenue_by_course(current_user.id)
+        # FIX: Explicit SELECT FROM to avoid SQL join ambiguity
+        query = db.query(
+            func.date_trunc(period, Payment.created_at).label("period"),
+            func.sum(Payment.amount).label("total"),
+            func.count(Payment.id).label("count")
+        ).select_from(Payment)
+        
+        query = query.filter(Payment.status == PaymentStatus.VERIFIED)
+        query = query.group_by(func.date_trunc(period, Payment.created_at))
+        query = query.order_by(func.date_trunc(period, Payment.created_at).desc())
+        query = query.limit(12)
+        
+        results = query.all()
+        
+        data = []
+        for r in results:
+            period_value = r.period.isoformat() if r.period else None
+            total_amount = float(r.total) if r.total else 0.0
+            count = r.count or 0
+            data.append({
+                "period": period_value,
+                "total": total_amount,
+                "count": count
+            })
+        
+        total_revenue = sum(d["total"] for d in data)
+        total_transactions = sum(d["count"] for d in data)
         
         return {
-            "summary": stats,
-            "by_course": revenue_by_course,
             "period": period,
+            "data": data,
+            "summary": {
+                "total_revenue": total_revenue,
+                "total_transactions": total_transactions,
+                "periods_count": len(data)
+            }
         }
-    except ValueError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Revenue report error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating revenue report: {str(e)}",
         )
 
 
@@ -501,34 +602,53 @@ def get_engagement_report(
         enrollment_service = EnrollmentService(db)
         attendance_service = AttendanceService(db)
         
-        # Get all students
         students = user_service.get_students(active_only=True)
         
         engagement_data = []
+        total_attendance = 0
+        total_enrollments = 0
+        
         for student in students:
-            # Get attendance summary
-            summary = attendance_service.get_attendance_summary(student.id)
-            enrollments = enrollment_service.get_student_enrollments(student.id)
-            
-            engagement_data.append({
-                "student_id": student.id,
-                "student_name": student.full_name,
-                "student_email": student.email,
-                "enrollments": len(enrollments.get("enrollments", [])),
-                "attendance": summary.get("overall_attendance", 0),
-                "total_present": summary.get("total_present", 0),
-                "total_missed": summary.get("total_missed", 0),
-                "total_made_up": summary.get("total_made_up", 0),
-            })
+            try:
+                summary = attendance_service.get_attendance_summary(student.id)
+                enrollments = enrollment_service.get_student_enrollments(student.id)
+                
+                attendance_rate = summary.get("overall_attendance", 0) or 0
+                enroll_count = len(enrollments.get("enrollments", []))
+                
+                total_attendance += attendance_rate
+                total_enrollments += enroll_count
+                
+                engagement_data.append({
+                    "student_id": student.id,
+                    "student_name": student.full_name,
+                    "student_email": student.email,
+                    "enrollments": enroll_count,
+                    "attendance_rate": attendance_rate,
+                    "total_present": summary.get("total_present", 0),
+                    "total_missed": summary.get("total_missed", 0),
+                    "total_made_up": summary.get("total_made_up", 0),
+                })
+            except Exception as e:
+                logger.warning(f"Error getting engagement for student {student.id}: {e}")
+                continue
+        
+        student_count = len(engagement_data)
+        avg_attendance = (total_attendance / student_count) if student_count > 0 else 0
+        avg_enrollments = (total_enrollments / student_count) if student_count > 0 else 0
         
         return {
             "students": engagement_data,
-            "total_students": len(engagement_data),
-            "average_attendance": sum(s["attendance"] for s in engagement_data) / len(engagement_data) if engagement_data else 0,
-            "average_enrollments": sum(s["enrollments"] for s in engagement_data) / len(engagement_data) if engagement_data else 0,
+            "total_students": student_count,
+            "average_attendance_rate": round(avg_attendance, 2),
+            "average_enrollments": round(avg_enrollments, 2),
+            "generated_at": datetime.utcnow().isoformat(),
         }
-    except ValueError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Engagement report error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating engagement report: {str(e)}",
         )
