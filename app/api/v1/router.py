@@ -15,12 +15,18 @@ from .payments import router as payments_router
 from .materials import router as materials_router
 from .invitations import router as invitations_router
 from .admin import router as admin_router
+# In app/api/v1/router.py, add:
+from .applications import router as applications_router
+# Add this import
+from .webhooks import router as webhooks_router
 
 # ============================================================
 # MAIN ROUTER
 # ============================================================
 
 router = APIRouter(prefix="/api/v1")
+router.include_router(applications_router)
+router.include_router(webhooks_router)
 
 # Include all routers
 router.include_router(auth_router)
