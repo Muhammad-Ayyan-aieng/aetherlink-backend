@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .core.config import settings
 from .core.database import engine, Base, test_connection, get_connection_info
+from .core.redis import redis_client
 
 # Import middleware
 from .middleware import (
@@ -70,12 +71,31 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️ Database connection issue: {e}")
         logger.warning("⚠️ App will start but database is unavailable")
     
+    # Connect to Redis
+    try:
+        if await redis_client.connect():
+            logger.info("   ✅ Redis connected")
+        else:
+            logger.warning("   ⚠️ Redis connection failed - rate limiting will use fail-open mode")
+    except Exception as e:
+        logger.error(f"   ❌ Redis connection error: {e}")
+        logger.warning("   ⚠️ Rate limiting will use fail-open mode")
+    
     logger.info("=" * 60)
     
     yield
     
     # ===== SHUTDOWN =====
     logger.info("🛑 Shutting down Aether Link API...")
+    
+    # Disconnect Redis
+    try:
+        await redis_client.disconnect()
+        logger.info("✅ Redis disconnected")
+    except Exception as e:
+        logger.error(f"❌ Redis disconnect failed: {e}")
+    
+    # Disconnect database
     engine.dispose()
     logger.info("✅ Database connections closed")
 
@@ -234,6 +254,9 @@ async def health_check():
     """
     db_status = test_connection()
     
+    # Check Redis status
+    redis_status = "✅ Connected" if await redis_client.ping() else "❌ Disconnected"
+    
     return {
         "status": "healthy" if "✅" in db_status else "unhealthy",
         "service": settings.APP_NAME,
@@ -241,6 +264,7 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.utcnow().isoformat(),
         "database": db_status,
+        "redis": redis_status,
     }
 
 
@@ -251,6 +275,9 @@ async def detailed_health_check():
     """
     db_status = test_connection()
     db_info = get_connection_info()
+    
+    # Check Redis status
+    redis_status = "✅ Connected" if await redis_client.ping() else "❌ Disconnected"
     
     return {
         "status": "healthy" if "✅" in db_status else "unhealthy",
@@ -264,6 +291,10 @@ async def detailed_health_check():
             "checked_in": db_info.get("checked_in_connections"),
             "overflow": db_info.get("overflow"),
             "total": db_info.get("total_connections"),
+        },
+        "redis": {
+            "status": redis_status,
+            "url": settings.REDIS_URL,
         },
         "rate_limits": {
             "auth": "10/minute",
