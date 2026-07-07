@@ -4,8 +4,9 @@
 
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import html
+import re
 
 from ..repositories.invitation_repository import InvitationRepository
 from ..repositories.user_repository import UserRepository
@@ -65,7 +66,6 @@ class InvitationService:
         # Validate phone if provided
         phone = None
         if invite_data.phone:
-            import re
             cleaned = re.sub(r'[\s\-\(\)]', '', invite_data.phone)
             if not re.match(r'^\+?[0-9]{10,15}$', cleaned):
                 raise ValueError("Invalid phone number format")
@@ -158,7 +158,6 @@ class InvitationService:
             raise ValueError("Username already taken")
         
         # Validate username
-        import re
         if not re.match(r'^[a-zA-Z0-9_]+$', accept_data.username):
             raise ValueError("Username must contain only letters, numbers, and underscores")
         
@@ -438,8 +437,16 @@ class InvitationService:
     
     def _format_invitation_response(self, invitation: Any) -> Dict[str, Any]:
         """Format invitation for response."""
-        now = datetime.utcnow()
-        is_expired = invitation.expires_at <= now
+        # Use timezone-aware datetime
+        now = datetime.now(timezone.utc)
+        
+        # Handle case where expires_at might be naive
+        expires_at = invitation.expires_at
+        if expires_at.tzinfo is None:
+            # If naive, make it aware (assuming UTC)
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        is_expired = expires_at <= now
         
         return {
             "id": invitation.id,
@@ -447,13 +454,13 @@ class InvitationService:
             "full_name": invitation.full_name,
             "phone": invitation.phone,
             "invited_by": invitation.invited_by,
-            "invited_by_name": invitation.invited_by_user.full_name if invitation.invited_by_user else None,
+            "invited_by_name": invitation.invited_by_user.full_name if hasattr(invitation, 'invited_by_user') and invitation.invited_by_user else None,
             "token": invitation.token,
-            "accepted": invitation.accepted,
+            "accepted": invitation.accepted if hasattr(invitation, 'accepted') else False,
             "accepted_at": invitation.accepted_at,
             "expires_at": invitation.expires_at,
             "is_expired": is_expired,
-            "days_until_expiry": max(0, (invitation.expires_at - now).days) if not is_expired else 0,
+            "days_until_expiry": max(0, (expires_at - now).days) if not is_expired else 0,
             "created_at": invitation.created_at,
             "updated_at": invitation.updated_at,
         }
