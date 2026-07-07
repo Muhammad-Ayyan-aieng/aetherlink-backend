@@ -1,15 +1,16 @@
 # ============================================================
-# AETHER LINK - RATE LIMIT MIDDLEWARE
+# AETHER LINK - RATE LIMIT MIDDLEWARE (REDIS VERSION)
 # ============================================================
 
 import time
-from typing import Dict, Tuple, Optional
-from fastapi import Request, HTTPException, status
+from typing import Dict, Tuple
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from ..core.config import settings
+from ..core.redis import redis_client
 
 # Rate limit configurations per endpoint type
 RATE_LIMITS = {
@@ -31,30 +32,18 @@ SKIP_PATHS = {
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to rate limit requests per IP.
+    Middleware to rate limit requests per IP using Redis.
     
     Features:
     - Different limits for different endpoints
     - IP-based tracking (supports proxies)
-    - Auto-cleanup of old entries
+    - Redis storage (persistent across restarts)
     - Rate limit headers in responses
     - Returns 429 when limit exceeded
-    
-    Usage:
-        app.add_middleware(RateLimitMiddleware)
     """
     
     def __init__(self, app: ASGIApp):
         super().__init__(app)
-        
-        # Store: {client_id: (count, reset_time)}
-        self._cache: Dict[str, Tuple[int, float]] = {}
-        
-        # Max cache size (prevent memory exhaustion)
-        self._max_cache_size = 10000
-        
-        # Cleanup counter
-        self._cleanup_counter = 0
     
     async def dispatch(self, request: Request, call_next):
         """
@@ -69,28 +58,33 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # Get rate limit for this endpoint
         limit_config = self._get_rate_limit(request)
+        max_requests = limit_config['requests']
+        period = limit_config['period']
         
-        # Check if client is rate limited
-        is_allowed, remaining, reset_time = self._check_rate_limit(
-            client_id, 
-            limit_config['requests'], 
-            limit_config['period']
+        # Redis key for this client and endpoint
+        redis_key = f"rate_limit:{client_id}:{request.url.path}"
+        
+        # Check rate limit using Redis
+        is_allowed, remaining, reset_time = await self._check_rate_limit_redis(
+            redis_key, 
+            max_requests, 
+            period
         )
         
         if not is_allowed:
-            # Rate limit exceeded - Return 429 directly (avoid HTTPException)
+            # Rate limit exceeded
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
                     "success": False,
                     "error": {
                         "code": 429,
-                        "message": f"Rate limit exceeded. Maximum {limit_config['requests']} requests per {limit_config['period']} seconds.",
+                        "message": f"Rate limit exceeded. Maximum {max_requests} requests per {period} seconds.",
                         "reset_at": reset_time,
                     }
                 },
                 headers={
-                    "X-RateLimit-Limit": str(limit_config['requests']),
+                    "X-RateLimit-Limit": str(max_requests),
                     "X-RateLimit-Remaining": str(remaining),
                     "X-RateLimit-Reset": str(int(reset_time)),
                     "Retry-After": str(int(reset_time - time.time())),
@@ -101,7 +95,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         
         # Add rate limit headers to response
-        response.headers["X-RateLimit-Limit"] = str(limit_config['requests'])
+        response.headers["X-RateLimit-Limit"] = str(max_requests)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Reset"] = str(int(reset_time))
         
@@ -146,69 +140,45 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Default
         return RATE_LIMITS['default']
     
-    def _check_rate_limit(
+    async def _check_rate_limit_redis(
         self, 
-        client_id: str, 
+        redis_key: str, 
         max_requests: int, 
         period: int
     ) -> Tuple[bool, int, float]:
         """
-        Check if client is rate limited.
+        Check if client is rate limited using Redis.
         
         Returns:
             (is_allowed, remaining_requests, reset_time)
         """
-        current_time = time.time()
-        
-        # Cleanup cache if too large
-        if len(self._cache) > self._max_cache_size:
-            self._cleanup_cache()
-        
-        # Get existing data or create new
-        if client_id in self._cache:
-            count, reset_time = self._cache[client_id]
-        else:
-            count = 0
-            reset_time = current_time + period
-        
-        # Reset if period expired
-        if current_time > reset_time:
-            count = 0
-            reset_time = current_time + period
-        
-        # Increment count
-        count += 1
-        self._cache[client_id] = (count, reset_time)
-        
-        # Check if limit exceeded
-        if count > max_requests:
-            remaining = 0
-            return False, remaining, reset_time
-        
-        remaining = max_requests - count
-        return True, remaining, reset_time
-    
-    def _cleanup_cache(self):
-        """
-        Remove expired entries from cache.
-        """
-        current_time = time.time()
-        expired_keys = [
-            client_id for client_id, (_, reset_time) in self._cache.items()
-            if current_time > reset_time
-        ]
-        
-        for client_id in expired_keys:
-            del self._cache[client_id]
-        
-        # If still too large, remove oldest entries
-        if len(self._cache) > self._max_cache_size:
-            # Sort by reset_time (oldest first)
-            sorted_items = sorted(
-                self._cache.items(), 
-                key=lambda x: x[1][1]
-            )
-            # Keep only first 80% of max size
-            keep_count = int(self._max_cache_size * 0.8)
-            for client_id, _ in sorted_items[keep_count:]:
-                del self._cache[client_id]
+        try:
+            # Check if Redis is available
+            if not await redis_client.ping():
+                # Redis unavailable - allow request (fail open)
+                return True, max_requests, time.time() + period
+            
+            # Get current count from Redis
+            current_count = await redis_client.get(redis_key)
+            
+            if current_count is None:
+                # First request, set to 1 with expiry
+                await redis_client.set(redis_key, 1, ex=period)
+                return True, max_requests - 1, time.time() + period
+            
+            # Increment count
+            new_count = await redis_client.incr(redis_key, ex=period)
+            
+            # Get TTL for reset time
+            ttl = await redis_client.ttl(redis_key)
+            reset_time = time.time() + ttl if ttl > 0 else time.time() + period
+            
+            if new_count > max_requests:
+                return False, 0, reset_time
+            
+            remaining = max_requests - new_count
+            return True, remaining, reset_time
+            
+        except Exception as e:
+            # If Redis fails, allow request (fail open)
+            return True, max_requests, time.time() + period
