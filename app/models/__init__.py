@@ -10,7 +10,7 @@ from .user import User, UserRole
 # Course
 from .course import Course, CourseStatus
 
-# Session (file is sessions.py)
+# Session
 from .sessions import Session, SessionStatus
 
 # Enrollment
@@ -19,14 +19,17 @@ from .enrollment import Enrollment, EnrollmentStatus, PaymentMethod
 # Attendance ⭐ CRITICAL
 from .attendance import Attendance, AttendanceStatus
 
-# Payment (file is payments.py)
+# Payment
 from .payments import Payment, PaymentStatus
 
 # Course Materials
 from .material import CourseMaterial
 
-# Teacher Invitations (file is invitations.py)
+# Teacher Invitations
 from .invitations import TeacherInvitation
+
+# Applications
+from .application import Application, ApplicationStatus  # ← ADD THIS
 
 # ============================================================
 # EXPOSE ALL MODELS
@@ -49,4 +52,6 @@ __all__ = [
     "PaymentStatus",
     "CourseMaterial",
     "TeacherInvitation",
+    "Application",          # ← ADD THIS
+    "ApplicationStatus",    # ← ADD THIS
 ]
