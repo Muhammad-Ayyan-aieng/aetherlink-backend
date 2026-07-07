@@ -4,7 +4,7 @@
 
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from ..repositories.enrollment_repository import EnrollmentRepository
 from ..repositories.course_repository import CourseRepository
@@ -34,7 +34,7 @@ class EnrollmentService:
     # ENROLL
     # ============================================================
     
-    def enroll_student(self, student_id: int, course_id: int) -> Enrollment:
+    def enroll_student(self, student_id: int, course_id: int) -> Dict[str, Any]:
         """
         Enroll a student in a course.
         
@@ -43,7 +43,7 @@ class EnrollmentService:
             course_id: Course ID
             
         Returns:
-            Created enrollment
+            Created enrollment with details
             
         Raises:
             ValueError: If validation fails
@@ -74,14 +74,14 @@ class EnrollmentService:
                 raise ValueError("Already enrolled in this course")
             elif existing.status == EnrollmentStatus.PENDING:
                 raise ValueError("Enrollment already pending. Please complete payment.")
-            elif existing.status == EnrollmentStatus.PAYMENT_VERIFICATION:
-                raise ValueError("Enrollment is awaiting payment verification")
             elif existing.status == EnrollmentStatus.COMPLETED:
                 raise ValueError("Already completed this course")
+            elif existing.status == EnrollmentStatus.CANCELLED:
+                raise ValueError("Previous enrollment was cancelled. Please contact support.")
             elif existing.status == EnrollmentStatus.EXPIRED:
                 raise ValueError("Previous enrollment expired. Please re-enroll.")
         
-        # Create enrollment
+        # Create enrollment (pending status)
         enrollment = self.enrollment_repo.create(
             student_id=student_id,
             course_id=course_id,
@@ -93,7 +93,7 @@ class EnrollmentService:
         )
         
         # Create payment record
-        self.payment_repo.create(
+        payment = self.payment_repo.create(
             enrollment_id=enrollment.id,
             student_id=student_id,
             amount=course.price,
@@ -101,7 +101,7 @@ class EnrollmentService:
             status="pending",
         )
         
-        return enrollment
+        return self._format_enrollment_response(enrollment)
     
     # ============================================================
     # READ
@@ -170,16 +170,23 @@ class EnrollmentService:
         if not student:
             raise ValueError("Student not found")
         
+        # Get enrollments with pagination
+        enrollments, total = self.enrollment_repo.get_by_student_paginated(student_id, skip, limit)
+        
+        # Apply status filter if provided (in memory)
         if status:
-            enrollments = self.enrollment_repo.get_by_status(EnrollmentStatus(status))
-            enrollments = [e for e in enrollments if e.student_id == student_id]
-            total = len(enrollments)
-            enrollments = enrollments[skip:skip + limit]
-        else:
-            enrollments, total = self.enrollment_repo.get_by_student_paginated(student_id, skip, limit)
+            try:
+                # Convert string to enum
+                status_enum = EnrollmentStatus(status)
+                enrollments = [e for e in enrollments if e.status == status_enum]
+                total = len(enrollments)
+            except ValueError:
+                # Invalid status string - return empty
+                enrollments = []
+                total = 0
         
         return {
-            "enrollments": enrollments,
+            "enrollments": [self._format_enrollment_response(e) for e in enrollments],
             "total": total,
             "page": skip // limit + 1 if limit > 0 else 1,
             "page_size": limit,
@@ -209,7 +216,7 @@ class EnrollmentService:
         enrollments, total = self.enrollment_repo.get_by_course_paginated(course_id, skip, limit)
         
         return {
-            "enrollments": enrollments,
+            "enrollments": [self._format_enrollment_response(e) for e in enrollments],
             "total": total,
             "page": skip // limit + 1 if limit > 0 else 1,
             "page_size": limit,
@@ -220,7 +227,7 @@ class EnrollmentService:
     # PAYMENT VERIFICATION (Admin)
     # ============================================================
     
-    def verify_payment(self, enrollment_id: int, verified_by: int, notes: Optional[str] = None) -> Enrollment:
+    def verify_payment(self, enrollment_id: int, verified_by: int, notes: Optional[str] = None) -> Dict[str, Any]:
         """
         Verify payment for an enrollment (admin only).
         
@@ -242,7 +249,7 @@ class EnrollmentService:
         
         enrollment = self.enrollment_repo.get_by_id_or_fail(enrollment_id)
         
-        if enrollment.status != EnrollmentStatus.PAYMENT_VERIFICATION:
+        if enrollment.status != EnrollmentStatus.PENDING:
             raise ValueError("Enrollment is not pending payment verification")
         
         if enrollment.payment_verified:
@@ -252,8 +259,8 @@ class EnrollmentService:
         enrollment.status = EnrollmentStatus.ACTIVE
         enrollment.payment_verified = True
         enrollment.payment_verified_by = verified_by
-        enrollment.payment_verified_at = datetime.utcnow()
-        enrollment.expires_at = datetime.utcnow() + timedelta(days=90)
+        enrollment.payment_verified_at = datetime.now(timezone.utc)
+        enrollment.expires_at = datetime.now(timezone.utc) + timedelta(days=90)
         
         if notes:
             enrollment.notes = notes
@@ -263,15 +270,15 @@ class EnrollmentService:
         if payment:
             payment.status = "verified"
             payment.verified_by = verified_by
-            payment.verified_at = datetime.utcnow()
+            payment.verified_at = datetime.now(timezone.utc)
             if notes:
                 payment.verification_notes = notes
         
         self.db.commit()
         self.db.refresh(enrollment)
-        return enrollment
+        return self._format_enrollment_response(enrollment)
     
-    def reject_payment(self, enrollment_id: int, verified_by: int, reason: str) -> Enrollment:
+    def reject_payment(self, enrollment_id: int, verified_by: int, reason: str) -> Dict[str, Any]:
         """
         Reject payment for an enrollment (admin only).
         
@@ -293,7 +300,7 @@ class EnrollmentService:
         
         enrollment = self.enrollment_repo.get_by_id_or_fail(enrollment_id)
         
-        if enrollment.status != EnrollmentStatus.PAYMENT_VERIFICATION:
+        if enrollment.status != EnrollmentStatus.PENDING:
             raise ValueError("Enrollment is not pending payment verification")
         
         # Reject payment
@@ -305,18 +312,18 @@ class EnrollmentService:
         if payment:
             payment.status = "rejected"
             payment.verified_by = verified_by
-            payment.rejected_at = datetime.utcnow()
+            payment.rejected_at = datetime.now(timezone.utc)
             payment.rejection_reason = reason
         
         self.db.commit()
         self.db.refresh(enrollment)
-        return enrollment
+        return self._format_enrollment_response(enrollment)
     
     # ============================================================
     # PROGRESS MANAGEMENT
     # ============================================================
     
-    def update_progress(self, enrollment_id: int, progress: int) -> Enrollment:
+    def update_progress(self, enrollment_id: int, progress: int) -> Dict[str, Any]:
         """
         Update student progress.
         
@@ -343,13 +350,13 @@ class EnrollmentService:
         # Auto-complete if progress is 100%
         if progress >= 100 and enrollment.status == EnrollmentStatus.ACTIVE:
             enrollment.status = EnrollmentStatus.COMPLETED
-            enrollment.completed_at = datetime.utcnow()
+            enrollment.completed_at = datetime.now(timezone.utc)
         
         self.db.commit()
         self.db.refresh(enrollment)
-        return enrollment
+        return self._format_enrollment_response(enrollment)
     
-    def complete_enrollment(self, enrollment_id: int) -> Enrollment:
+    def complete_enrollment(self, enrollment_id: int) -> Dict[str, Any]:
         """
         Manually mark enrollment as completed.
         
@@ -368,14 +375,14 @@ class EnrollmentService:
             raise ValueError("Enrollment already completed")
         
         enrollment.status = EnrollmentStatus.COMPLETED
-        enrollment.completed_at = datetime.utcnow()
+        enrollment.completed_at = datetime.now(timezone.utc)
         enrollment.progress_percentage = 100
         
         self.db.commit()
         self.db.refresh(enrollment)
-        return enrollment
+        return self._format_enrollment_response(enrollment)
     
-    def cancel_enrollment(self, enrollment_id: int) -> Enrollment:
+    def cancel_enrollment(self, enrollment_id: int) -> Dict[str, Any]:
         """
         Cancel enrollment (admin or student).
         
@@ -391,7 +398,7 @@ class EnrollmentService:
         enrollment = self.enrollment_repo.get_by_id_or_fail(enrollment_id)
         
         if enrollment.status in [EnrollmentStatus.COMPLETED, EnrollmentStatus.CANCELLED]:
-            raise ValueError(f"Cannot cancel enrollment with status {enrollment.status}")
+            raise ValueError(f"Cannot cancel enrollment with status {enrollment.status.value}")
         
         enrollment.status = EnrollmentStatus.CANCELLED
         
@@ -399,11 +406,11 @@ class EnrollmentService:
         payment = self.payment_repo.get_by_enrollment(enrollment_id)
         if payment and payment.status == "verified":
             payment.status = "refunded"
-            payment.refunded_at = datetime.utcnow()
+            payment.refunded_at = datetime.now(timezone.utc)
         
         self.db.commit()
         self.db.refresh(enrollment)
-        return enrollment
+        return self._format_enrollment_response(enrollment)
     
     # ============================================================
     # ⭐ STUDENT DASHBOARD
@@ -516,3 +523,57 @@ class EnrollmentService:
             raise ValueError("Admin access required")
         
         return self.enrollment_repo.get_stats()
+    
+    # ============================================================
+    # HELPERS
+    # ============================================================
+    
+    def _format_enrollment_response(self, enrollment: Enrollment) -> Dict[str, Any]:
+        """
+        Format enrollment for API response with course and teacher details.
+        """
+        # Get course and teacher details
+        course = None
+        teacher_name = None
+        
+        # Try to get course from relationship
+        if hasattr(enrollment, 'course') and enrollment.course:
+            course = enrollment.course
+        else:
+            course = self.course_repo.get_by_id(enrollment.course_id)
+        
+        # Get teacher name
+        if course:
+            if hasattr(course, 'teacher') and course.teacher:
+                teacher_name = course.teacher.full_name
+            elif course.teacher_id:
+                teacher = self.user_repo.get_by_id(course.teacher_id)
+                if teacher:
+                    teacher_name = teacher.full_name
+        
+        # Format payment method
+        payment_method = enrollment.payment_method
+        if hasattr(payment_method, 'value'):
+            payment_method = payment_method.value
+        
+        return {
+            "id": enrollment.id,
+            "student_id": enrollment.student_id,
+            "course_id": enrollment.course_id,
+            "course_title": course.title if course else None,
+            "course_slug": course.slug if course else None,
+            "teacher_name": teacher_name,
+            "status": enrollment.status.value,
+            "progress_percentage": enrollment.progress_percentage,
+            "payment_amount": float(enrollment.payment_amount) if enrollment.payment_amount else None,
+            "payment_method": payment_method,
+            "payment_verified": enrollment.payment_verified,
+            "payment_verified_by": enrollment.payment_verified_by,
+            "payment_verified_at": enrollment.payment_verified_at,
+            "expires_at": enrollment.expires_at,
+            "notes": enrollment.notes,
+            "enrolled_at": enrollment.enrolled_at,
+            "completed_at": enrollment.completed_at,
+            "created_at": enrollment.created_at,
+            "updated_at": enrollment.updated_at,
+        }
