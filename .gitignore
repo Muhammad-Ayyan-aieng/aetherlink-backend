@@ -1,2 +1,14 @@
-__pycache__/
+# Open .gitignore
+.gitignore
+
+# Add these lines if not already present:
 .env
+.env.local
+.env.production
+*.pyc
+__pycache__/
+logs/
+*.log
+debug_check.py
+test_signed.py
+alembic.ini
