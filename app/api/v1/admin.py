@@ -124,7 +124,7 @@ def get_dashboard(
 
 
 # ============================================================
-# ADMIN: USER MANAGEMENT
+# ADMIN: USER MANAGEMENT (FIXED)
 # ============================================================
 
 @router.get(
@@ -162,7 +162,32 @@ def get_admin_users(
             search=search,
         )
         
-        return result
+        # Convert User objects to dictionaries
+        user_list = []
+        for user in result.get("users", []):
+            user_list.append({
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "full_name": user.full_name,
+                "phone": user.phone,
+                "profile_picture": user.profile_picture,
+                "bio": user.bio,
+                "role": user.role.value,
+                "is_verified": user.is_verified,
+                "is_active": user.is_active,
+                "last_login": user.last_login,
+                "created_at": user.created_at,
+                "updated_at": user.updated_at,
+            })
+        
+        return {
+            "users": user_list,
+            "total": result.get("total", 0),
+            "page": result.get("page", 1),
+            "page_size": result.get("page_size", limit),
+            "total_pages": result.get("total_pages", 0),
+        }
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -171,7 +196,7 @@ def get_admin_users(
 
 
 # ============================================================
-# ADMIN: COURSE MANAGEMENT
+# ADMIN: COURSE MANAGEMENT (FIXED)
 # ============================================================
 
 @router.get(
@@ -204,8 +229,31 @@ def get_admin_courses(
         else:
             courses, total = course_service.course_repo.get_all(skip=skip, limit=limit)
         
+        # Convert SQLAlchemy models to dictionaries
+        course_list = []
+        for course in courses:
+            course_list.append({
+                "id": course.id,
+                "title": course.title,
+                "slug": course.slug,
+                "description": course.description,
+                "price": float(course.price) if course.price else 0,
+                "thumbnail": course.thumbnail,
+                "status": course.status.value if course.status else None,
+                "is_featured": course.is_featured,
+                "teacher_id": course.teacher_id,
+                "teacher_name": course.teacher.full_name if course.teacher else None,
+                "total_sessions": course.total_sessions,
+                "meta_title": course.meta_title,
+                "meta_description": course.meta_description,
+                "meta_keywords": course.meta_keywords,
+                "created_at": course.created_at,
+                "updated_at": course.updated_at,
+                "deleted_at": course.deleted_at,
+            })
+        
         return {
-            "courses": courses,
+            "courses": course_list,
             "total": total,
             "page": skip // limit + 1 if limit > 0 else 1,
             "page_size": limit,
@@ -219,7 +267,7 @@ def get_admin_courses(
 
 
 # ============================================================
-# ADMIN: PAYMENT MANAGEMENT
+# ADMIN: PAYMENT MANAGEMENT (FIXED)
 # ============================================================
 
 @router.get(
@@ -245,22 +293,65 @@ def get_admin_payments(
         
         if status == "pending":
             pending = payment_service.get_pending_payments(current_user.id)
+            
+            # Convert to dictionaries
+            payment_list = []
+            for payment in pending:
+                payment_list.append({
+                    "id": payment.id,
+                    "student_id": payment.student_id,
+                    "enrollment_id": payment.enrollment_id,
+                    "amount": float(payment.amount) if payment.amount else 0,
+                    "method": payment.method,
+                    "status": payment.status,
+                    "screenshot_url": payment.screenshot_url,
+                    "transaction_id": payment.transaction_id,
+                    "student_name": payment.student.full_name if payment.student else None,
+                    "student_email": payment.student.email if payment.student else None,
+                    "created_at": payment.created_at,
+                    "updated_at": payment.updated_at,
+                })
+            
             return {
-                "payments": pending,
+                "payments": payment_list,
                 "total": len(pending),
                 "page": 1,
                 "page_size": len(pending),
                 "total_pages": 1,
             }
         else:
-            # Get all payments - simplified
-            # In production, use proper pagination
+            # Get all payments
             payments = payment_service.payment_repo.get_all()
             total = payments[1] if isinstance(payments, tuple) else 0
             payment_list = payments[0] if isinstance(payments, tuple) else payments
             
+            paginated = payment_list[skip:skip + limit]
+            
+            # Convert to dictionaries
+            payment_dicts = []
+            for payment in paginated:
+                payment_dicts.append({
+                    "id": payment.id,
+                    "student_id": payment.student_id,
+                    "enrollment_id": payment.enrollment_id,
+                    "amount": float(payment.amount) if payment.amount else 0,
+                    "method": payment.method,
+                    "status": payment.status,
+                    "screenshot_url": payment.screenshot_url,
+                    "transaction_id": payment.transaction_id,
+                    "verified_by": payment.verified_by,
+                    "verified_at": payment.verified_at,
+                    "rejected_at": payment.rejected_at,
+                    "rejection_reason": payment.rejection_reason,
+                    "refunded_at": payment.refunded_at,
+                    "student_name": payment.student.full_name if payment.student else None,
+                    "student_email": payment.student.email if payment.student else None,
+                    "created_at": payment.created_at,
+                    "updated_at": payment.updated_at,
+                })
+            
             return {
-                "payments": payment_list[skip:skip + limit],
+                "payments": payment_dicts,
                 "total": total,
                 "page": skip // limit + 1 if limit > 0 else 1,
                 "page_size": limit,
