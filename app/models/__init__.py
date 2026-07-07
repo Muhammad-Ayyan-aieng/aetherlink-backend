@@ -31,6 +31,9 @@ from .invitations import TeacherInvitation
 # Applications
 from .application import Application, ApplicationStatus  # ← ADD THIS
 
+# Payments
+from .payments import Payment, PaymentStatus, PaymentMethod
+
 # ============================================================
 # EXPOSE ALL MODELS
 # ============================================================
