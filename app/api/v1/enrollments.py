@@ -5,6 +5,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List, Any
+import logging
 
 from ...core.database import get_db
 from ...core.dependencies import (
@@ -15,6 +16,8 @@ from ...core.dependencies import (
 )
 from ...services.enrollment_service import EnrollmentService
 from ...services.course_service import CourseService
+from ...services.attendance_service import AttendanceService
+from ...services.session_service import SessionService
 from ...schemas.enrollment import (
     EnrollmentCreate,
     EnrollmentUpdate,
@@ -26,6 +29,7 @@ from ...schemas.enrollment import (
 )
 from ...models.user import User, UserRole
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/enrollments", tags=["Enrollments"])
 
 
@@ -70,15 +74,20 @@ def enroll_student(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Enroll error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error enrolling: {str(e)}",
+        )
 
 
 # ============================================================
-# STUDENT: MY ENROLLMENTS
+# STUDENT: MY ENROLLMENTS (FIXED)
 # ============================================================
 
 @router.get(
     "/me",
-    response_model=List[StudentEnrollmentResponse],
     dependencies=[Depends(rate_limiter)],
     summary="Get my enrollments",
     description="Get all enrollments for the current student.",
@@ -98,14 +107,14 @@ def get_my_enrollments(
     - **limit**: Max results (1-100)
     """
     try:
-        enrollment_service = EnrollmentService(db)
-        
+        # FIX: Check if user is a student FIRST
         if current_user.role != UserRole.STUDENT:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only students can view their enrollments",
             )
         
+        enrollment_service = EnrollmentService(db)
         result = enrollment_service.get_student_enrollments(
             student_id=current_user.id,
             status=status,
@@ -113,11 +122,71 @@ def get_my_enrollments(
             limit=limit,
         )
         
-        return result["enrollments"]
-    except ValueError as e:
+        # Convert to response format
+        enrollments = []
+        for enrollment in result.get("enrollments", []):
+            # Calculate session stats
+            total_sessions = 0
+            completed_sessions = 0
+            missed_sessions = 0
+            next_session_date = None
+            next_session_title = None
+            
+            if enrollment.course:
+                total_sessions = enrollment.course.total_sessions or 0
+                
+                # Get attendance for this enrollment
+                try:
+                    attendance_service = AttendanceService(db)
+                    attendance_stats = attendance_service.get_student_attendance_stats(
+                        student_id=current_user.id,
+                        course_id=enrollment.course_id
+                    )
+                    completed_sessions = attendance_stats.get("present", 0) + attendance_stats.get("made_up", 0)
+                    missed_sessions = attendance_stats.get("missed", 0)
+                except Exception as e:
+                    logger.warning(f"Error getting attendance stats: {e}")
+                    completed_sessions = 0
+                    missed_sessions = 0
+                
+                # Get next session
+                try:
+                    session_service = SessionService(db)
+                    next_session = session_service.get_next_session_for_course(enrollment.course_id)
+                    if next_session:
+                        next_session_date = next_session.date_time
+                        next_session_title = next_session.title
+                except Exception as e:
+                    logger.warning(f"Error getting next session: {e}")
+                    next_session_date = None
+                    next_session_title = None
+            
+            enrollments.append({
+                "id": enrollment.id,
+                "course_id": enrollment.course_id,
+                "course_title": enrollment.course.title if enrollment.course else None,
+                "course_slug": enrollment.course.slug if enrollment.course else None,
+                "course_thumbnail": enrollment.course.thumbnail if enrollment.course else None,
+                "teacher_name": enrollment.course.teacher.full_name if enrollment.course and enrollment.course.teacher else None,
+                "status": enrollment.status.value if enrollment.status else None,
+                "progress_percentage": enrollment.progress_percentage or 0,
+                "enrolled_at": enrollment.enrolled_at,
+                "expires_at": enrollment.expires_at,
+                "total_sessions": total_sessions,
+                "completed_sessions": completed_sessions,
+                "missed_sessions": missed_sessions,
+                "next_session_date": next_session_date,
+                "next_session_title": next_session_title,
+            })
+        
+        return enrollments
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get my enrollments error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching enrollments: {str(e)}",
         )
 
 
@@ -159,6 +228,12 @@ def get_dashboard(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Dashboard error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching dashboard: {str(e)}",
         )
 
 
@@ -204,6 +279,12 @@ def get_enrollment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Get enrollment error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching enrollment: {str(e)}",
+        )
 
 
 # ============================================================
@@ -243,6 +324,12 @@ def verify_payment(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Verify payment error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error verifying payment: {str(e)}",
         )
 
 
@@ -286,6 +373,12 @@ def reject_payment(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Reject payment error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error rejecting payment: {str(e)}",
         )
 
 
@@ -333,6 +426,12 @@ def update_progress(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Update progress error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating progress: {str(e)}",
+        )
 
 
 # ============================================================
@@ -378,6 +477,12 @@ def complete_enrollment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+    except Exception as e:
+        logger.error(f"Complete enrollment error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error completing enrollment: {str(e)}",
+        )
 
 
 # ============================================================
@@ -420,6 +525,12 @@ def cancel_enrollment(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Cancel enrollment error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error canceling enrollment: {str(e)}",
         )
 
 
@@ -466,4 +577,10 @@ def get_course_enrollments(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Get course enrollments error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching course enrollments: {str(e)}",
         )
