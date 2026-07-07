@@ -116,11 +116,18 @@ class Settings(BaseSettings):
     # EMAIL
     # ============================================================
     
-   
     EMAIL_PROVIDER: str = "sendgrid"
     EMAIL_FROM: str = "noreply@aetherlink.com"
     SENDGRID_API_KEY: Optional[str] = None
     RESEND_API_KEY: Optional[str] = None
+    
+    # ============================================================
+    # REDIS CONFIGURATION  <-- MOVED INSIDE SETTINGS CLASS
+    # ============================================================
+    
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_CACHE_TTL: int = 300  # 5 minutes default cache TTL
+    
     # ============================================================
     # ZOOM
     # ============================================================
@@ -171,6 +178,7 @@ try:
     print(f"   Environment: {settings.ENVIRONMENT}")
     print(f"   Database: {settings.DATABASE_URL[:30]}...")
     print(f"   Supabase Storage: {settings.SUPABASE_BUCKET}")
+    print(f"   Redis: {settings.REDIS_URL}")  # <-- Added Redis to startup log
 except ValidationError as e:
     print("❌ Configuration error:")
     for error in e.errors():
