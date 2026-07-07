@@ -38,3 +38,5 @@ httpx==0.26.0
 # Development
 black==23.11.0
 isort==5.13.2
+
+supabase>=2.0.0
