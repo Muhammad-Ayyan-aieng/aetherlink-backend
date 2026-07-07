@@ -5,6 +5,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from typing import Optional, List, Any
+import logging
+import traceback
 
 from ...core.database import get_db
 from ...core.dependencies import (
@@ -13,8 +15,10 @@ from ...core.dependencies import (
     get_current_admin_user,
     rate_limiter,
 )
+from ...core.config import settings
 from ...services.session_service import SessionService
 from ...services.course_service import CourseService
+from ...services.zoom_service import ZoomService
 from ...schemas.session import (
     SessionCreate,
     SessionUpdate,
@@ -23,6 +27,8 @@ from ...schemas.session import (
     SessionListResponse,
 )
 from ...models.user import User, UserRole
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
 
@@ -111,15 +117,15 @@ def get_session(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(get_current_teacher_user)],
     summary="Create a session",
-    description="Create a new session (teacher or admin only).",
+    description="Create a new session with Zoom meeting (teacher or admin only).",
 )
-def create_session(
+async def create_session(
     session_data: SessionCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
-    Create a new session.
+    Create a new session with automatic Zoom meeting creation.
     
     **Teacher or Admin only.**
     
@@ -128,20 +134,53 @@ def create_session(
     - **title**: 3-255 characters
     - **date_time**: Scheduled date and time
     - **duration_minutes**: 1-180 minutes
-    - **zoom_meeting_id**: Required
-    - **recording_url**: Required
+    - **description**: Optional description
     """
     try:
         session_service = SessionService(db)
+        
+        # Create session first
         session = session_service.create_session(
             session_data=session_data,
             user_id=current_user.id,
         )
+        
+        # Try to create Zoom meeting (don't fail if it doesn't work)
+        try:
+            # Check if Zoom credentials are configured
+            if settings.ZOOM_ACCOUNT_ID and settings.ZOOM_CLIENT_ID and settings.ZOOM_CLIENT_SECRET:
+                zoom_service = ZoomService(db)
+                meeting_result = await zoom_service.create_meeting_for_session(
+                    session_id=session.id,
+                    topic=session_data.title,
+                    start_time=session_data.date_time,
+                    duration=session_data.duration_minutes or 60,
+                    description=session_data.description,
+                )
+                logger.info(f"✅ Zoom meeting created for session {session.id}: {meeting_result.get('meeting_id')}")
+                db.refresh(session)
+            else:
+                logger.warning("⚠️ Zoom credentials not configured, skipping Zoom meeting creation")
+                
+        except ImportError as e:
+            logger.warning(f"⚠️ Zoom service not available: {e}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to create Zoom meeting: {e}")
+            # Don't fail the session creation
+        
         return session
+        
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"❌ Error creating session: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create session: {str(e)}",
         )
 
 
@@ -152,7 +191,7 @@ def create_session(
     summary="Update a session",
     description="Update an existing session (teacher or admin only).",
 )
-def update_session(
+async def update_session(
     session_id: int,
     session_data: SessionUpdate,
     current_user: User = Depends(get_current_user),
@@ -175,7 +214,24 @@ def update_session(
             update_data=session_data,
             user_id=current_user.id,
         )
+        
+        # Update Zoom meeting if session has a Zoom meeting ID
+        if session.zoom_meeting_id:
+            try:
+                zoom_service = ZoomService(db)
+                await zoom_service.zoom_client.update_meeting(
+                    meeting_id=session.zoom_meeting_id,
+                    topic=session_data.title,
+                    start_time=session_data.date_time,
+                    duration=session_data.duration_minutes,
+                    agenda=session_data.description,
+                )
+                logger.info(f"✅ Zoom meeting updated for session {session_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to update Zoom meeting: {e}")
+        
         return session
+        
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -188,15 +244,15 @@ def update_session(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(rate_limiter)],
     summary="Delete a session",
-    description="Soft delete a session (teacher or admin only).",
+    description="Delete a session and cancel Zoom meeting (teacher or admin only).",
 )
-def delete_session(
+async def delete_session(
     session_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     """
-    Delete a session.
+    Delete a session and cancel Zoom meeting.
     
     **Teacher or Admin only.**
     
@@ -204,14 +260,165 @@ def delete_session(
     """
     try:
         session_service = SessionService(db)
+        
+        # Get session to check for Zoom meeting
+        session = session_service.get_session(session_id)
+        
+        # Delete Zoom meeting if exists
+        if session.zoom_meeting_id:
+            try:
+                zoom_service = ZoomService(db)
+                await zoom_service.zoom_client.delete_meeting(session.zoom_meeting_id)
+                logger.info(f"✅ Zoom meeting deleted for session {session_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to delete Zoom meeting: {e}")
+        
         session_service.delete_session(
             session_id=session_id,
             user_id=current_user.id,
         )
+        
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        )
+
+
+# ============================================================
+# ZOOM MEETING MANAGEMENT
+# ============================================================
+
+@router.post(
+    "/{session_id}/zoom/create",
+    response_model=SessionResponse,
+    dependencies=[Depends(get_current_teacher_user)],
+    summary="Create Zoom meeting",
+    description="Create or recreate Zoom meeting for a session (teacher or admin only).",
+)
+async def create_zoom_meeting(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Create or recreate Zoom meeting for a session.
+    
+    **Teacher or Admin only.**
+    
+    - **session_id**: Session ID
+    """
+    try:
+        # Check if Zoom credentials are configured
+        if not settings.ZOOM_ACCOUNT_ID or not settings.ZOOM_CLIENT_ID or not settings.ZOOM_CLIENT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Zoom credentials not configured",
+            )
+        
+        session_service = SessionService(db)
+        session = session_service.get_session(session_id)
+        
+        # Use session object attributes directly (not .get())
+        zoom_service = ZoomService(db)
+        meeting_result = await zoom_service.create_meeting_for_session(
+            session_id=session_id,
+            topic=session.title,
+            start_time=session.date_time,
+            duration=session.duration_minutes or 60,
+            description=session.description,
+        )
+        
+        db.refresh(session)
+        return session_service.get_session(session_id)
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"❌ Error creating Zoom meeting: {e}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create Zoom meeting: {str(e)}",
+        )
+
+
+@router.post(
+    "/{session_id}/zoom/sync-attendance",
+    dependencies=[Depends(get_current_teacher_user)],
+    summary="Sync Zoom attendance",
+    description="Sync attendance from Zoom participants (teacher or admin only).",
+)
+async def sync_zoom_attendance(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Sync attendance from Zoom participants.
+    
+    **Teacher or Admin only.**
+    
+    - **session_id**: Session ID
+    """
+    try:
+        zoom_service = ZoomService(db)
+        result = await zoom_service.sync_attendance(session_id)
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"❌ Error syncing Zoom attendance: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync Zoom attendance: {str(e)}",
+        )
+
+
+@router.post(
+    "/{session_id}/zoom/sync-recordings",
+    dependencies=[Depends(get_current_teacher_user)],
+    summary="Sync Zoom recordings",
+    description="Sync recording URLs from Zoom (teacher or admin only).",
+)
+async def sync_zoom_recordings(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Sync recording URLs from Zoom.
+    
+    **Teacher or Admin only.**
+    
+    - **session_id**: Session ID
+    """
+    try:
+        zoom_service = ZoomService(db)
+        recordings = await zoom_service.sync_recordings(session_id)
+        return {
+            "session_id": session_id,
+            "recordings": recordings,
+            "count": len(recordings),
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"❌ Error syncing Zoom recordings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync Zoom recordings: {str(e)}",
         )
 
 
