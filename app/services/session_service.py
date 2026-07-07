@@ -4,7 +4,7 @@
 
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import html
 import re
 
@@ -72,9 +72,6 @@ class SessionService:
         if session_data.duration_minutes < 1 or session_data.duration_minutes > 180:
             raise ValueError("Duration must be between 1 and 180 minutes")
         
-        # Validate date (can be in the past for backfilling, but warn)
-        # Allow past dates for administrative purposes
-        
         # Sanitize input
         title = html.escape(session_data.title.strip())
         description = html.escape(session_data.description.strip()) if session_data.description else None
@@ -96,7 +93,7 @@ class SessionService:
         if session_data.zoom_join_url and 'zoom.us' not in session_data.zoom_join_url.lower():
             raise ValueError("Invalid Zoom URL")
         
-        # Create session
+        # Create session - status defaults to UPCOMING since SessionCreate doesn't have status field
         session = self.session_repo.create(
             course_id=session_data.course_id,
             session_number=session_data.session_number,
@@ -109,7 +106,7 @@ class SessionService:
             zoom_start_url=session_data.zoom_start_url,
             zoom_password=session_data.zoom_password,
             recording_url=session_data.recording_url,
-            status=session_data.status.value if session_data.status else SessionStatus.UPCOMING.value,
+            status=SessionStatus.UPCOMING.value,  # Fixed: always UPCOMING by default
             meeting_notes=html.escape(session_data.meeting_notes.strip()) if session_data.meeting_notes else None,
             resources=session_data.resources,
         )
@@ -117,7 +114,7 @@ class SessionService:
         # If recording URL is provided, mark as available
         if session_data.recording_url:
             session.recording_available = True
-            session.recording_processed_at = datetime.utcnow()
+            session.recording_processed_at = datetime.now(timezone.utc)
             self.db.commit()
             self.db.refresh(session)
         
@@ -382,7 +379,7 @@ class SessionService:
             update_dict["recording_url"] = update_data.recording_url
             if update_data.recording_url:
                 update_dict["recording_available"] = True
-                update_dict["recording_processed_at"] = datetime.utcnow()
+                update_dict["recording_processed_at"] = datetime.now(timezone.utc)
             else:
                 update_dict["recording_available"] = False
         
@@ -440,7 +437,7 @@ class SessionService:
         
         session.recording_url = recording_url
         session.recording_available = True
-        session.recording_processed_at = datetime.utcnow()
+        session.recording_processed_at = datetime.now(timezone.utc)
         
         self.db.commit()
         self.db.refresh(session)
@@ -483,7 +480,7 @@ class SessionService:
         # If session has recording, mark as available
         if session.recording_url and not session.recording_available:
             session.recording_available = True
-            session.recording_processed_at = datetime.utcnow()
+            session.recording_processed_at = datetime.now(timezone.utc)
         
         session.status = SessionStatus.COMPLETED
         self.db.commit()
@@ -598,7 +595,7 @@ class SessionService:
         return session
     
     # ============================================================
-    # ZOOM INTEGRATION
+    # ZOOM INTEGRATION (Placeholder)
     # ============================================================
     
     def create_zoom_meeting(self, session_id: int, user_id: int) -> Dict[str, Any]:
@@ -606,7 +603,6 @@ class SessionService:
         Create a Zoom meeting for a session.
         """
         # This is a placeholder. Actual Zoom API integration will be added later.
-        # For now, just return a placeholder response.
         return {
             "message": "Zoom meeting creation will be implemented with Zoom API integration",
             "session_id": session_id,
@@ -619,7 +615,6 @@ class SessionService:
         """
         Sync Zoom attendance for a session.
         """
-        # This is a placeholder. Actual Zoom API integration will be added later.
         return {
             "message": "Zoom attendance sync will be implemented with Zoom API integration",
             "session_id": session_id,
