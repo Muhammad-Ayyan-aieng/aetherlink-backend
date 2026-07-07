@@ -1,89 +1,56 @@
 # ============================================================
-# AETHER LINK API - COMPLETE REQUIREMENTS
-# ============================================================
-# Python 3.11+ required
-# This file includes all dependencies including build tools
-# For Render deployment, set PYTHON_VERSION=3.11
+# AETHER LINK API - PRODUCTION REQUIREMENTS
 # ============================================================
 
-# ============================================================
-# CORE FRAMEWORK
-# ============================================================
-
+# Core Framework
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
-# ============================================================
-# DATABASE
-# ============================================================
-
+# Database
 sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
 alembic==1.14.1
 
-# ============================================================
-# AUTHENTICATION & SECURITY
-# ============================================================
-
+# Authentication & Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 bcrypt==4.2.0
 cryptography==44.0.0
 
-# ============================================================
-# REDIS & RATE LIMITING
-# ============================================================
-
+# Redis & Rate Limiting
 redis==5.2.1
 aioredis==2.0.1
 async-timeout==5.0.1
 
-# ============================================================
-# HTTP CLIENT
-# ============================================================
-
+# HTTP Client - Pinned to a version compatible with Supabase dependencies
 httpx==0.27.2
 httpcore==1.0.7
 requests==2.32.3
 
-# ============================================================
-# SUPABASE
-# ============================================================
-
+# Supabase Ecosystem - Versions that are mutually compatible
 supabase==2.6.0
 gotrue==2.5.0
 postgrest==0.16.0
 storage3==0.7.0
 realtime==1.0.2
 
-# ============================================================
-# EMAIL
-# ============================================================
-
+# Email
 sendgrid==6.12.0
 python-http-client==3.3.7
 
-# ============================================================
-# ZOOM API
-# ============================================================
-
+# Utilities
 python-dateutil==2.9.0.post0
-
-# ============================================================
-# UTILITIES
-# ============================================================
-
 python-json-logger==3.2.1
 orjson==3.10.15
 ujson==5.10.0
-python-multipart==0.0.20
 
 # ============================================================
 # DEVELOPMENT & TESTING
+# (These are not strictly required for production but included for completeness)
 # ============================================================
 
 pytest==8.3.4
@@ -95,7 +62,7 @@ flake8==7.1.1
 mypy==1.14.1
 
 # ============================================================
-# BUILD TOOLS (For Render/Rust Dependencies)
+# BUILD TOOLS
 # ============================================================
 
 setuptools==75.8.0
