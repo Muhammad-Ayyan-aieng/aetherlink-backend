@@ -5,13 +5,26 @@
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 import html
+import logging
+from fastapi import UploadFile
 
 from ..repositories.material_repository import MaterialRepository
 from ..repositories.course_repository import CourseRepository
 from ..repositories.user_repository import UserRepository
 from ..models.user import UserRole
 from ..models.course import CourseStatus
+from ..models.material import CourseMaterial
 from ..schemas.material import MaterialUpload, MaterialUpdate, MaterialTypeEnum
+from ..core.config import settings
+from ..core.supabase import (
+    upload_file_to_storage,
+    delete_file_from_storage,
+    get_signed_url,
+    file_exists
+)
+from ..utils.sanitizer import sanitize_text
+
+logger = logging.getLogger(__name__)
 
 
 class MaterialService:
@@ -24,15 +37,21 @@ class MaterialService:
         self.user_repo = UserRepository(db)
     
     # ============================================================
-    # UPLOAD
+    # UPLOAD (WITH FILE UPLOAD TO SUPABASE)
     # ============================================================
     
-    def upload_material(self, material_data: MaterialUpload, user_id: int) -> Dict[str, Any]:
+    async def upload_material(
+        self, 
+        material_data: MaterialUpload, 
+        file: Optional[UploadFile],
+        user_id: int
+    ) -> Dict[str, Any]:
         """
-        Upload a course material.
+        Upload a course material with file to Supabase Storage.
         
         Args:
             material_data: Material data
+            file: UploadFile object (for file types)
             user_id: Uploader ID
             
         Returns:
@@ -65,57 +84,82 @@ class MaterialService:
             MaterialTypeEnum.PPTX,
             MaterialTypeEnum.DOC,
             MaterialTypeEnum.DOCX,
-            MaterialTypeEnum.LINK
+            MaterialTypeEnum.LINK,
+            MaterialTypeEnum.TXT
         ]:
-            raise ValueError("Invalid file type. Allowed: pdf, pptx, doc, docx, link")
+            raise ValueError("Invalid file type. Allowed: pdf, pptx, doc, docx, link, txt")
         
-        # Validate file or link
-        if material_data.file_type == MaterialTypeEnum.LINK:
+        is_link = material_data.file_type == MaterialTypeEnum.LINK
+        storage_path = None
+        uploaded_file_name = None
+        uploaded_file_size = None
+        uploaded_mime_type = None
+        
+        # ============================================================
+        # HANDLE LINK TYPE
+        # ============================================================
+        if is_link:
             if not material_data.link_url:
                 raise ValueError("Link URL is required for link type")
             if not material_data.link_url.startswith(('http://', 'https://')):
                 raise ValueError("Invalid link URL")
-        else:
-            if not material_data.file_url:
-                raise ValueError("File URL is required for file types")
-            if not material_data.file_url.startswith(('http://', 'https://')):
-                raise ValueError("Invalid file URL")
         
-        # Validate file size (if file)
-        if material_data.file_size:
-            max_size = 20 * 1024 * 1024  # 20 MB
-            if material_data.file_size > max_size:
-                raise ValueError(f"File size must be less than {max_size / (1024 * 1024):.0f} MB")
+        # ============================================================
+        # HANDLE FILE TYPE - UPLOAD TO SUPABASE STORAGE
+        # ============================================================
+        else:
+            if not file:
+                raise ValueError("File is required for file types")
+            
+            # Upload to Supabase Storage
+            try:
+                upload_result = await upload_file_to_storage(
+                    file=file,
+                    course_id=material_data.course_id,
+                    folder="materials"
+                )
+                storage_path = upload_result["storage_path"]
+                uploaded_file_name = upload_result["file_name"]
+                uploaded_file_size = upload_result["file_size"]
+                uploaded_mime_type = upload_result["mime_type"]
+            except Exception as e:
+                raise ValueError(f"File upload failed: {str(e)}")
         
         # Sanitize input
-        title = html.escape(material_data.title.strip())
-        description = html.escape(material_data.description.strip()) if material_data.description else None
+        title = sanitize_text(material_data.title.strip(), max_length=255)
+        description = sanitize_text(material_data.description.strip(), max_length=1000) if material_data.description else None
         
         if len(title) < 3:
             raise ValueError("Title must be at least 3 characters")
         
-        if description and len(description) > 1000:
-            raise ValueError("Description must be less than 1000 characters")
+        # Create material in database
+        try:
+            material = self.material_repo.create(
+                course_id=material_data.course_id,
+                title=title,
+                description=description,
+                file_url=material_data.file_url or storage_path,
+                file_name=material_data.file_name or uploaded_file_name,
+                file_type=material_data.file_type.value,
+                file_size=material_data.file_size or uploaded_file_size,
+                mime_type=material_data.mime_type or uploaded_mime_type,
+                uploaded_by=user_id,
+                is_link=is_link,
+                link_url=material_data.link_url,
+                is_published=True,
+                storage_path=storage_path,
+            )
+        except Exception as e:
+            # If DB fails, clean up storage
+            if storage_path:
+                try:
+                    delete_file_from_storage(storage_path)
+                except Exception:
+                    pass
+            raise ValueError(f"Failed to save material: {str(e)}")
         
-        # Determine if link
-        is_link = material_data.file_type == MaterialTypeEnum.LINK
-        
-        # Upload material
-        material = self.material_repo.create(
-            course_id=material_data.course_id,
-            title=title,
-            description=description,
-            file_url=material_data.file_url,
-            file_name=material_data.file_name,
-            file_type=material_data.file_type.value,
-            file_size=material_data.file_size,
-            mime_type=material_data.mime_type,
-            uploaded_by=user_id,
-            is_link=is_link,
-            link_url=material_data.link_url,
-            is_published=True,
-        )
-        
+        self.db.commit()
+        self.db.refresh(material)
         return self._format_material_response(material)
     
     # ============================================================
@@ -163,15 +207,14 @@ class MaterialService:
         update_dict = {}
         
         if update_data.title is not None:
-            title = html.escape(update_data.title.strip())
+            title = sanitize_text(update_data.title.strip(), max_length=255)
             if len(title) < 3:
                 raise ValueError("Title must be at least 3 characters")
             update_dict["title"] = title
         
         if update_data.description is not None:
-            update_dict["description"] = html.escape(update_data.description.strip()) if update_data.description else None
-            if update_dict["description"] and len(update_dict["description"]) > 1000:
-                raise ValueError("Description must be less than 1000 characters")
+            desc = sanitize_text(update_data.description.strip(), max_length=1000) if update_data.description else None
+            update_dict["description"] = desc
         
         if update_data.is_published is not None:
             update_dict["is_published"] = update_data.is_published
@@ -205,19 +248,19 @@ class MaterialService:
         return self._format_material_response(material)
     
     # ============================================================
-    # READ
+    # READ - WITH SIGNED URL
     # ============================================================
     
     def get_material(self, material_id: int, user_id: int) -> Dict[str, Any]:
         """
-        Get material by ID.
+        Get material by ID with signed URL for file access.
         
         Args:
             material_id: Material ID
             user_id: User requesting
             
         Returns:
-            Material details
+            Material details with signed URL
             
         Raises:
             ValueError: If material not found or permission denied
@@ -237,7 +280,31 @@ class MaterialService:
             if course and course.teacher_id != user_id and user.role != UserRole.ADMIN:
                 raise ValueError("Material is not published")
         
-        return self._format_material_response(material)
+        response = self._format_material_response(material)
+        
+        # ============================================================
+        # ⭐ GENERATE SIGNED URL
+        # ============================================================
+        logger.info(f"🔍 Checking signed URL for material {material_id}: storage_path={material.storage_path}, is_link={material.is_link}")
+        
+        if material.storage_path and not material.is_link:
+            try:
+                logger.info(f"🔐 Generating signed URL for: {material.storage_path}")
+                signed_url = get_signed_url(
+                    material.storage_path, 
+                    expires_in=settings.SIGNED_URL_EXPIRY
+                )
+                response["file_url"] = signed_url
+                response["signed_url_expiry"] = settings.SIGNED_URL_EXPIRY
+                logger.info(f"✅ Signed URL generated successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to generate signed URL: {e}")
+                response["file_url"] = None
+                response["signed_url_error"] = str(e)
+        else:
+            logger.warning(f"⚠️ Skipping signed URL: storage_path={material.storage_path}, is_link={material.is_link}")
+        
+        return response
     
     def get_course_materials(
         self, 
@@ -248,7 +315,7 @@ class MaterialService:
         limit: int = 20
     ) -> Dict[str, Any]:
         """
-        Get materials for a course.
+        Get materials for a course with signed URLs.
         
         Args:
             course_id: Course ID
@@ -284,13 +351,112 @@ class MaterialService:
                 raise ValueError("You don't have permission to view unpublished materials")
             materials, total = self.material_repo.get_by_course_paginated(course_id, skip, limit)
         
+        # Format response with signed URLs
+        formatted_materials = []
+        for material in materials:
+            formatted = self._format_material_response(material)
+            
+            # Generate signed URL if file exists in storage
+            if material.storage_path and not material.is_link:
+                try:
+                    signed_url = get_signed_url(
+                        material.storage_path,
+                        expires_in=settings.SIGNED_URL_EXPIRY
+                    )
+                    formatted["file_url"] = signed_url
+                except Exception as e:
+                    logger.error(f"Failed to generate signed URL: {e}")
+                    formatted["file_url"] = None
+            
+            formatted_materials.append(formatted)
+        
         return {
-            "materials": [self._format_material_response(m) for m in materials],
+            "materials": formatted_materials,
             "total": total,
             "page": skip // limit + 1 if limit > 0 else 1,
             "page_size": limit,
             "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
         }
+    
+    # ============================================================
+    # PUBLIC METHODS (No Auth)
+    # ============================================================
+    
+    def get_course_materials_public(
+        self, 
+        course_id: int,
+        published_only: bool = True,
+        skip: int = 0,
+        limit: int = 20
+    ) -> Dict[str, Any]:
+        """Public access - only published materials."""
+        materials, total = self.material_repo.get_by_course_paginated(course_id, skip, limit)
+        materials = [m for m in materials if m.is_published]
+        total = len(materials)
+        materials = materials[skip:skip + limit]
+        
+        formatted_materials = []
+        for material in materials:
+            formatted = self._format_material_response(material)
+            # For public access, only show file_url if it's a link
+            if material.is_link:
+                formatted["file_url"] = material.link_url
+            else:
+                formatted["file_url"] = None
+            formatted_materials.append(formatted)
+        
+        return {
+            "materials": formatted_materials,
+            "total": total,
+            "page": skip // limit + 1 if limit > 0 else 1,
+            "page_size": limit,
+            "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
+        }
+    
+    def get_material_public(self, material_id: int) -> Dict[str, Any]:
+        """Public access - only published materials."""
+        material = self.material_repo.get_by_id(material_id)
+        if not material:
+            raise ValueError("Material not found")
+        
+        if not material.is_published:
+            raise ValueError("Material not published")
+        
+        response = self._format_material_response(material)
+        if material.is_link:
+            response["file_url"] = material.link_url
+        else:
+            response["file_url"] = None
+        
+        return response
+    
+    def search_materials_public(
+        self, 
+        query: str,
+        course_id: Optional[int] = None,
+        file_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Public search - only published materials."""
+        if len(query) < 2:
+            raise ValueError("Search query must be at least 2 characters")
+        
+        materials = self.material_repo.search_materials(
+            query=query,
+            course_id=course_id,
+            file_type=file_type,
+            published_only=True,
+        )
+        
+        formatted = []
+        for material in materials:
+            resp = self._format_material_response(material)
+            if material.is_link:
+                resp["file_url"] = material.link_url
+            else:
+                resp["file_url"] = None
+            formatted.append(resp)
+        
+        return formatted
     
     # ============================================================
     # STATUS OPERATIONS
@@ -299,16 +465,6 @@ class MaterialService:
     def publish_material(self, material_id: int, user_id: int) -> Dict[str, Any]:
         """
         Publish a material.
-        
-        Args:
-            material_id: Material ID
-            user_id: User making change
-            
-        Returns:
-            Updated material
-            
-        Raises:
-            ValueError: If validation fails or permission denied
         """
         material = self.material_repo.get_by_id_or_fail(material_id)
         user = self.user_repo.get_by_id(user_id)
@@ -335,16 +491,6 @@ class MaterialService:
     def unpublish_material(self, material_id: int, user_id: int) -> Dict[str, Any]:
         """
         Unpublish a material.
-        
-        Args:
-            material_id: Material ID
-            user_id: User making change
-            
-        Returns:
-            Updated material
-            
-        Raises:
-            ValueError: If validation fails or permission denied
         """
         material = self.material_repo.get_by_id_or_fail(material_id)
         user = self.user_repo.get_by_id(user_id)
@@ -369,12 +515,12 @@ class MaterialService:
         return self._format_material_response(material)
     
     # ============================================================
-    # DELETE / RESTORE
+    # DELETE / RESTORE (WITH STORAGE CLEANUP)
     # ============================================================
     
     def delete_material(self, material_id: int, user_id: int) -> Dict[str, Any]:
         """
-        Delete a material.
+        Delete a material - removes from storage and database.
         
         Args:
             material_id: Material ID
@@ -399,12 +545,21 @@ class MaterialService:
         if course.teacher_id != user_id and user.role != UserRole.ADMIN:
             raise ValueError("You don't have permission to delete this material")
         
+        # Delete from storage first
+        if material.storage_path and not material.is_link:
+            try:
+                delete_file_from_storage(material.storage_path)
+                logger.info(f"Deleted file from storage: {material.storage_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete file from storage: {e}")
+        
+        # Soft delete from database
         self.material_repo.soft_delete(material_id)
         
         return {"message": "Material deleted successfully"}
     
     # ============================================================
-    # SEARCH
+    # SEARCH (Authenticated)
     # ============================================================
     
     def search_materials(
@@ -415,21 +570,11 @@ class MaterialService:
         file_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Search materials.
-        
-        Args:
-            query: Search query
-            user_id: User searching
-            course_id: Optional course filter
-            file_type: Optional file type filter
-            
-        Returns:
-            List of materials
+        Search materials with signed URLs.
         """
         if len(query) < 2:
             raise ValueError("Search query must be at least 2 characters")
         
-        # Check if user can view unpublished materials
         user = self.user_repo.get_by_id(user_id)
         if not user:
             raise ValueError("User not found")
@@ -443,7 +588,24 @@ class MaterialService:
             published_only=published_only,
         )
         
-        return [self._format_material_response(m) for m in materials]
+        formatted = []
+        for material in materials:
+            resp = self._format_material_response(material)
+            
+            # Generate signed URL if file exists in storage
+            if material.storage_path and not material.is_link:
+                try:
+                    signed_url = get_signed_url(
+                        material.storage_path,
+                        expires_in=settings.SIGNED_URL_EXPIRY
+                    )
+                    resp["file_url"] = signed_url
+                except Exception:
+                    resp["file_url"] = None
+            
+            formatted.append(resp)
+        
+        return formatted
     
     # ============================================================
     # STATISTICS
@@ -452,13 +614,6 @@ class MaterialService:
     def get_material_stats(self, course_id: int, user_id: int) -> Dict[str, Any]:
         """
         Get material statistics for a course.
-        
-        Args:
-            course_id: Course ID
-            user_id: User requesting
-            
-        Returns:
-            Material statistics
         """
         course = self.course_repo.get_by_id(course_id)
         if not course:
@@ -477,8 +632,22 @@ class MaterialService:
     # HELPERS
     # ============================================================
     
-    def _format_material_response(self, material: Any) -> Dict[str, Any]:
-        """Format material for response."""
+    def _format_material_response(self, material: CourseMaterial) -> Dict[str, Any]:
+        """
+        Format material for API response.
+        """
+        # Get uploader name safely
+        uploader_name = None
+        if hasattr(material, 'uploader') and material.uploader:
+            uploader_name = material.uploader.full_name
+        elif hasattr(material, 'uploaded_by_user') and material.uploaded_by_user:
+            uploader_name = material.uploaded_by_user.full_name
+        
+        # Calculate size in MB
+        size_mb = None
+        if material.file_size:
+            size_mb = round(material.file_size / (1024 * 1024), 2)
+        
         return {
             "id": material.id,
             "course_id": material.course_id,
@@ -488,13 +657,14 @@ class MaterialService:
             "file_url": material.file_url,
             "file_name": material.file_name,
             "file_size": material.file_size,
-            "size_mb": material.size_mb,
+            "size_mb": size_mb,
             "mime_type": material.mime_type,
             "is_link": material.is_link,
             "link_url": material.link_url,
             "is_published": material.is_published,
             "uploaded_by": material.uploaded_by,
-            "uploader_name": material.uploaded_by_user.full_name if material.uploaded_by_user else None,
+            "uploader_name": uploader_name,
+            "storage_path": material.storage_path,
             "created_at": material.created_at,
             "updated_at": material.updated_at,
         }
