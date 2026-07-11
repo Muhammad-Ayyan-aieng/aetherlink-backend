@@ -61,14 +61,21 @@ def get_courses(
             featured=featured,
         )
         
-        # Convert courses to dicts to avoid serialization issues
+        # Convert courses to dicts with truncated descriptions
         course_list = []
         for course in result["courses"]:
+            # ==========================================================
+            # FIX: Truncate description to avoid validation errors
+            # ==========================================================
+            description = course.description
+            if description and len(description) > 5000:
+                description = description[:4997] + '...'
+            
             course_list.append({
                 "id": course.id,
                 "title": course.title,
                 "slug": course.slug,
-                "description": course.description,
+                "description": description,
                 "price": float(course.price) if course.price else 0,
                 "thumbnail": course.thumbnail,
                 "status": course.status.value if course.status else None,
@@ -122,14 +129,20 @@ def search_courses(
         course_service = CourseService(db)
         courses = course_service.search_courses(query=q)
         
-        # FIX: Convert SQLAlchemy objects to dictionaries
         result = []
         for course in courses:
+            # ==========================================================
+            # FIX: Truncate description to avoid validation errors
+            # ==========================================================
+            description = course.description
+            if description and len(description) > 5000:
+                description = description[:4997] + '...'
+            
             result.append({
                 "id": course.id,
                 "title": course.title,
                 "slug": course.slug,
-                "description": course.description,
+                "description": description,
                 "price": float(course.price) if course.price else 0,
                 "thumbnail": course.thumbnail,
                 "status": course.status.value if course.status else None,
