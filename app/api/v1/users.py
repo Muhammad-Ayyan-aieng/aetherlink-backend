@@ -2,9 +2,12 @@
 # AETHER LINK - USERS API
 # ============================================================
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, File, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List, Any
+import base64
+import re
 
 from ...core.database import get_db
 from ...core.dependencies import get_current_user, get_current_admin_user, rate_limiter
@@ -74,6 +77,10 @@ def update_me(
         )
 
 
+# ============================================================
+# UPDATE PROFILE PICTURE - FIXED: Accepts base64 or URL
+# ============================================================
+
 @router.put(
     "/me/picture",
     response_model=UserResponse,
@@ -81,26 +88,117 @@ def update_me(
     summary="Update profile picture",
 )
 def update_profile_picture(
-    picture_url: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
     Update the current user's profile picture.
     
-    - **picture_url**: Valid URL to the image
+    Accepts:
+    - JSON: {"picture_url": "https://..."} 
+    - JSON: {"picture_url": "data:image/png;base64,..."}
+    - Form data with file upload (future)
     """
     try:
+        import json
+        
+        # Get the request body
+        body = request.body()
+        
+        # Parse JSON body
+        try:
+            data = json.loads(body)
+            picture_url = data.get("picture_url")
+        except:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body. Expected: {\"picture_url\": \"...\"}"
+            )
+        
+        if not picture_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="picture_url is required"
+            )
+        
+        # Validate URL format
+        if not picture_url.startswith(('http://', 'https://', 'data:image')):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="picture_url must be a valid URL or base64 image"
+            )
+        
         user_service = UserService(db)
         updated_user = user_service.update_profile_picture(
             user_id=current_user.id,
             picture_url=picture_url,
         )
         return updated_user
-    except ValueError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating profile picture: {str(e)}",
+        )
+
+
+# ============================================================
+# ALTERNATIVE: Upload profile picture with file
+# ============================================================
+
+@router.post(
+    "/me/picture/upload",
+    response_model=UserResponse,
+    dependencies=[Depends(rate_limiter)],
+    summary="Upload profile picture (file upload)",
+)
+async def upload_profile_picture(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Upload a profile picture as a file.
+    
+    Supports: PNG, JPG, JPEG, WebP
+    Max size: 5MB
+    """
+    try:
+        # Validate file type
+        allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+        
+        # Validate file size (5MB)
+        contents = await file.read()
+        if len(contents) > 5 * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size must be less than 5MB"
+            )
+        
+        # Convert to base64 for storage
+        import base64
+        base64_image = base64.b64encode(contents).decode('utf-8')
+        picture_url = f"data:{file.content_type};base64,{base64_image}"
+        
+        user_service = UserService(db)
+        updated_user = user_service.update_profile_picture(
+            user_id=current_user.id,
+            picture_url=picture_url,
+        )
+        return updated_user
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading picture: {str(e)}",
         )
 
 
