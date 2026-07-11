@@ -9,10 +9,10 @@ from typing import Any
 import json
 
 from ...core.database import get_db
-from ...core.dependencies import rate_limiter, auth_rate_limiter, get_current_user
+from ...core.dependencies import rate_limiter, auth_rate_limiter, get_current_user, get_current_admin_user
 from ...services.auth_service import AuthService
 from ...services.user_service import UserService
-from ...models.user import User  # <-- ADD THIS
+from ...models.user import User
 from ...schemas.auth import (
     UserRegister,
     UserLogin,
@@ -29,16 +29,15 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 # ============================================================
-# REGISTER
+# REGISTER - UPDATED: Returns approval message
 # ============================================================
 
 @router.post(
     "/register",
-    response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(auth_rate_limiter)],
     summary="Register a new student account",
-    description="Create a new student account. Email verification required for login.",
+    description="Create a new student account. Account is inactive until admin approval.",
 )
 def register(
     user_data: UserRegister,
@@ -47,6 +46,9 @@ def register(
 ) -> Any:
     """
     Register a new student user.
+    
+    IMPORTANT: Account is created INACTIVE by default.
+    Admin must approve the application before login is allowed.
     
     - **email**: Must be a valid email address
     - **username**: 3-50 characters, alphanumeric with underscores
@@ -58,8 +60,27 @@ def register(
         auth_service = AuthService(db)
         result = auth_service.register(user_data)
         
-        # Format response
+        # ============================================================
+        # FIX: Return clear message about account approval
+        # ============================================================
         user = result["user"]
+        
+        # If user is inactive (pending approval), return special response
+        if not user.is_active:
+            return {
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "full_name": user.full_name,
+                "role": user.role.value,
+                "is_active": user.is_active,
+                "is_verified": user.is_verified,
+                "created_at": user.created_at,
+                "message": "Registration successful! Your account is pending admin approval. You will receive an email once approved.",
+                "requires_approval": True,
+            }
+        
+        # If user is active (e.g., teacher invitation), return normal response
         return {
             "id": user.id,
             "email": user.email,
@@ -83,7 +104,7 @@ def register(
 
 
 # ============================================================
-# LOGIN - SUPPORTS BOTH JSON AND FORM DATA
+# LOGIN - UPDATED: Better inactive account message
 # ============================================================
 
 @router.post(
@@ -116,7 +137,6 @@ async def login(
                     email = data.get("email") or data.get("username", "")
                     password = data.get("password", "")
                     
-                    # ===== VALIDATE FIELDS (Return 422 for validation errors) =====
                     if not email or not password:
                         raise HTTPException(
                             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -134,7 +154,6 @@ async def login(
                 email = form.get("username", "")
                 password = form.get("password", "")
                 
-                # ===== VALIDATE FIELDS (Return 422 for validation errors) =====
                 if not email or not password:
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -165,16 +184,25 @@ async def login(
             },
         }
     except HTTPException:
-        # Re-raise HTTP exceptions (they already have correct status codes)
         raise
     except ValueError as e:
-        # Auth errors (wrong password, user not found) → 401
+        # ============================================================
+        # FIX: Better error message for inactive accounts
+        # ============================================================
+        if "pending approval" in str(e) or "inactive" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": str(e),
+                    "code": "ACCOUNT_INACTIVE",
+                    "requires_approval": True,
+                }
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
         )
     except Exception as e:
-        # Unexpected errors → 500
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred",
@@ -221,6 +249,15 @@ def login_email(
             },
         }
     except ValueError as e:
+        if "pending approval" in str(e) or "inactive" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "message": str(e),
+                    "code": "ACCOUNT_INACTIVE",
+                    "requires_approval": True,
+                }
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
@@ -294,7 +331,7 @@ def logout() -> Any:
     description="Get the currently authenticated user's profile.",
 )
 def get_me(
-    current_user: User = Depends(get_current_user),  # ✅ CORRECT - get user from token
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -317,6 +354,7 @@ def get_me(
         "created_at": current_user.created_at,
         "updated_at": current_user.updated_at,
     }
+
 
 # ============================================================
 # CHANGE PASSWORD
@@ -346,6 +384,7 @@ def change_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
 
 # ============================================================
 # FORGOT PASSWORD
@@ -409,4 +448,69 @@ def reset_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+# ============================================================
+# NEW: ADMIN - ACTIVATE USER
+# ============================================================
+
+@router.put(
+    "/admin/activate/{user_id}",
+    dependencies=[Depends(get_current_admin_user)],
+    summary="Activate user account (Admin only)",
+    description="Activate a user account. Admin only.",
+)
+def activate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Activate a user account.
     
+    **Admin only.**
+    
+    - **user_id**: ID of user to activate
+    """
+    try:
+        auth_service = AuthService(db)
+        result = auth_service.activate_user(user_id, current_user.id)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+# ============================================================
+# NEW: ADMIN - DEACTIVATE USER
+# ============================================================
+
+@router.put(
+    "/admin/deactivate/{user_id}",
+    dependencies=[Depends(get_current_admin_user)],
+    summary="Deactivate user account (Admin only)",
+    description="Deactivate a user account. Admin only.",
+)
+def deactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Deactivate a user account.
+    
+    **Admin only.**
+    
+    - **user_id**: ID of user to deactivate
+    """
+    try:
+        auth_service = AuthService(db)
+        result = auth_service.deactivate_user(user_id, current_user.id)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
