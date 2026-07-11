@@ -29,7 +29,7 @@ class CourseBase(BaseModel):
     
     title: str = Field(..., min_length=3, max_length=255, description="Course title")
     slug: str = Field(..., min_length=3, max_length=100, description="URL-friendly slug")
-    description: Optional[str] = Field(None, max_length=5000, description="Course description")
+    description: Optional[str] = Field(None, max_length=10000, description="Course description")  # ← INCREASED to 10000
     price: float = Field(0, ge=0, le=999999, description="Course price (0-999,999 PKR)")
     thumbnail: Optional[str] = Field(None, max_length=500, description="Course thumbnail URL")
     status: CourseStatusEnum = Field(default=CourseStatusEnum.DRAFT, description="Course status")
@@ -39,6 +39,16 @@ class CourseBase(BaseModel):
     meta_title: Optional[str] = Field(None, max_length=255, description="SEO title")
     meta_description: Optional[str] = Field(None, max_length=500, description="SEO description")
     meta_keywords: Optional[str] = Field(None, max_length=255, description="SEO keywords")
+    
+    # ============================================================
+    # FIX: Validator to truncate long descriptions
+    # ============================================================
+    @validator('description')
+    def truncate_description(cls, v: Optional[str]) -> Optional[str]:
+        """Truncate description to prevent validation errors."""
+        if v and len(v) > 5000:
+            return v[:4997] + '...'
+        return v
     
     @validator('slug')
     def validate_slug(cls, v: str) -> str:
@@ -76,7 +86,7 @@ class CourseUpdate(BaseModel):
     
     title: Optional[str] = Field(None, min_length=3, max_length=255, description="Course title")
     slug: Optional[str] = Field(None, min_length=3, max_length=100, description="URL-friendly slug")
-    description: Optional[str] = Field(None, max_length=5000, description="Course description")
+    description: Optional[str] = Field(None, max_length=10000, description="Course description")  # ← INCREASED to 10000
     price: Optional[float] = Field(None, ge=0, le=999999, description="Course price")
     thumbnail: Optional[str] = Field(None, max_length=500, description="Course thumbnail URL")
     status: Optional[CourseStatusEnum] = Field(None, description="Course status")
@@ -86,6 +96,13 @@ class CourseUpdate(BaseModel):
     meta_title: Optional[str] = Field(None, max_length=255, description="SEO title")
     meta_description: Optional[str] = Field(None, max_length=500, description="SEO description")
     meta_keywords: Optional[str] = Field(None, max_length=255, description="SEO keywords")
+    
+    @validator('description')
+    def truncate_description(cls, v: Optional[str]) -> Optional[str]:
+        """Truncate description to prevent validation errors."""
+        if v and len(v) > 5000:
+            return v[:4997] + '...'
+        return v
     
     @validator('slug')
     def validate_slug(cls, v: Optional[str]) -> Optional[str]:
