@@ -26,16 +26,16 @@ router = APIRouter(prefix="/applications", tags=["Applications"])
 
 
 # ============================================================
-# PUBLIC: SUBMIT APPLICATION
+# PUBLIC: SUBMIT APPLICATION (WITH USER CREATION)
 # ============================================================
 
 @router.post(
     "/",
-    response_model=ApplicationResponse,
+    response_model=dict,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(rate_limiter)],
     summary="Submit application",
-    description="Submit a course application. Public access - no authentication required.",
+    description="Submit a course application. Creates user account and sets status to pending.",
 )
 def submit_application(
     data: ApplicationSubmit,
@@ -46,16 +46,30 @@ def submit_application(
     
     **Public access - no authentication required.**
     
+    This will:
+    1. Create a new user account (is_active=False)
+    2. Create an application (status='pending')
+    3. Send email notification to admin
+    
     - **email**: Student email
     - **full_name**: Student full name
     - **phone**: Optional phone number
     - **course_id**: Course ID
     - **message**: Optional message
+    - **payment_screenshot**: Payment screenshot URL (optional)
     """
     try:
         application_service = ApplicationService(db)
         result = application_service.submit_application(data)
-        return result
+        
+        # Return a more detailed response
+        return {
+            "message": "Application submitted successfully! You will receive an email once approved.",
+            "application_id": result.get("application_id"),
+            "user_id": result.get("user_id"),
+            "status": "pending",
+            "requires_approval": True,
+        }
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -185,7 +199,7 @@ def get_application(
     response_model=dict,
     dependencies=[Depends(get_current_admin_user)],
     summary="Approve application",
-    description="Approve an application and create user account (admin only).",
+    description="Approve an application. Activates user account and enrolls them in the course.",
 )
 def approve_application(
     application_id: int,
@@ -197,6 +211,11 @@ def approve_application(
     Approve an application.
     
     **Admin only.**
+    
+    This will:
+    1. Activate the user account (is_active=True)
+    2. Create an enrollment for the user in the course
+    3. Send email notification to the user
     
     - **notes**: Optional admin notes
     """

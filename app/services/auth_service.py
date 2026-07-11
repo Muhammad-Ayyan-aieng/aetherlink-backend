@@ -32,15 +32,15 @@ class AuthService:
         self.invitation_repo = InvitationRepository(db)
     
     # ============================================================
-    # REGISTER - UPDATED: Account created INACTIVE
+    # REGISTER - Teachers active, Students inactive
     # ============================================================
     
     def register(self, user_data: UserRegister) -> Dict[str, Any]:
         """
         Register a new user.
         
-        IMPORTANT: Account is created INACTIVE by default.
-        Admin must approve the application before account is activated.
+        - Teachers (from invitation): Account is ACTIVE immediately
+        - Students (from application): Account is INACTIVE until admin approval
         
         Args:
             user_data: Registration data
@@ -82,30 +82,60 @@ class AuthService:
         hashed_password = get_password_hash(user_data.password)
         
         # ============================================================
-        # FIX: Create user with is_active = False
+        # Determine if user should be active immediately
+        # Teachers from invitations are active, students need approval
         # ============================================================
+        
+        # Check if this is a teacher invitation
+        is_teacher_invitation = self._is_teacher_invitation(email)
+        
+        # Create user
         user = self.user_repo.create(
             email=email,
             username=username,
             hashed_password=hashed_password,
             full_name=full_name,
             phone=phone,
-            role=UserRole.STUDENT,
+            role=UserRole.STUDENT,  # Default role
             is_verified=False,
-            is_active=False,  # ← CHANGED: Account is INACTIVE by default
+            is_active=is_teacher_invitation,  # Active only if teacher invitation
         )
         
-        # TODO: Create application record for this user
-        # TODO: Send email notification to admin about new application
+        # If this is a teacher invitation, update role to teacher
+        if is_teacher_invitation:
+            user.role = UserRole.TEACHER
+            self.db.commit()
+            self.db.refresh(user)
+            
+            return {
+                "user": user,
+                "message": "Teacher account created successfully!",
+                "requires_approval": False,
+            }
         
+        # Student registration (requires approval)
         return {
             "user": user,
             "message": "Registration successful. Your account is pending approval. You will receive an email once verified.",
             "requires_approval": True,
         }
     
+    def _is_teacher_invitation(self, email: str) -> bool:
+        """
+        Check if the email has a pending teacher invitation.
+        
+        Args:
+            email: Email to check
+            
+        Returns:
+            True if there's a pending teacher invitation
+        """
+        # Check for pending invitation
+        invitation = self.invitation_repo.get_pending_by_email(email)
+        return invitation is not None
+    
     # ============================================================
-    # LOGIN - UPDATED: Check is_active
+    # LOGIN - Check is_active
     # ============================================================
     
     def login(self, login_data: UserLogin) -> Dict[str, Any]:
@@ -137,7 +167,7 @@ class AuthService:
             raise ValueError("Invalid email or password")
         
         # ============================================================
-        # FIX: Check if user is active before login
+        # Check if user is active before login
         # ============================================================
         if not user.is_active:
             raise ValueError(
@@ -171,7 +201,7 @@ class AuthService:
         }
     
     # ============================================================
-    # NEW: ACTIVATE USER (Admin Only)
+    # ACTIVATE USER (Admin Only)
     # ============================================================
     
     def activate_user(self, user_id: int, admin_id: int) -> Dict[str, Any]:
@@ -198,6 +228,7 @@ class AuthService:
         # Activate user
         user.is_active = True
         self.db.commit()
+        self.db.refresh(user)
         
         # TODO: Send email notification to user
         # TODO: Log activation in audit trail
@@ -208,7 +239,7 @@ class AuthService:
         }
     
     # ============================================================
-    # NEW: DEACTIVATE USER (Admin Only)
+    # DEACTIVATE USER (Admin Only)
     # ============================================================
     
     def deactivate_user(self, user_id: int, admin_id: int) -> Dict[str, Any]:
@@ -235,6 +266,7 @@ class AuthService:
         # Deactivate user
         user.is_active = False
         self.db.commit()
+        self.db.refresh(user)
         
         return {
             "message": f"User {user.email} has been deactivated",
@@ -278,7 +310,7 @@ class AuthService:
             raise ValueError("User not found")
         
         # ============================================================
-        # FIX: Check if user is active before refreshing token
+        # Check if user is active before refreshing token
         # ============================================================
         if not user.is_active:
             raise ValueError("User account is inactive")
@@ -370,7 +402,6 @@ class AuthService:
             return {"message": "If an account exists, a reset link will be sent"}
         
         # TODO: Generate reset token and send email
-        # For now, just return success
         
         return {
             "message": "If an account exists, a reset link will be sent",
@@ -395,7 +426,6 @@ class AuthService:
             ValueError: If token invalid or expired
         """
         # TODO: Validate reset token and find user
-        # For now, placeholder
         
         # Validate new password strength
         password_check = validate_password_strength(new_password)
@@ -424,7 +454,6 @@ class AuthService:
             ValueError: If token invalid or expired
         """
         # TODO: Validate verification token and find user
-        # For now, placeholder
         
         return {"message": "Email verified successfully"}
     

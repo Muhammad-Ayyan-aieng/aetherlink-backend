@@ -29,78 +29,25 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 # ============================================================
-# REGISTER - UPDATED: Returns approval message
+# REGISTER - DISABLED (Use Application Flow Instead)
 # ============================================================
 
 @router.post(
     "/register",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth_rate_limiter)],
-    summary="Register a new student account",
-    description="Create a new student account. Account is inactive until admin approval.",
+    status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+    summary="Registration is disabled",
+    description="Registration is only available through course applications.",
 )
-def register(
-    user_data: UserRegister,
-    request: Request,
-    db: Session = Depends(get_db),
-) -> Any:
+def register_disabled():
     """
-    Register a new student user.
+    Registration is disabled.
     
-    IMPORTANT: Account is created INACTIVE by default.
-    Admin must approve the application before login is allowed.
-    
-    - **email**: Must be a valid email address
-    - **username**: 3-50 characters, alphanumeric with underscores
-    - **password**: Minimum 8 characters, strong password
-    - **full_name**: 1-100 characters
-    - **phone**: Optional, valid phone number format
+    Please apply for a course through the application process.
     """
-    try:
-        auth_service = AuthService(db)
-        result = auth_service.register(user_data)
-        
-        # ============================================================
-        # FIX: Return clear message about account approval
-        # ============================================================
-        user = result["user"]
-        
-        # If user is inactive (pending approval), return special response
-        if not user.is_active:
-            return {
-                "id": user.id,
-                "email": user.email,
-                "username": user.username,
-                "full_name": user.full_name,
-                "role": user.role.value,
-                "is_active": user.is_active,
-                "is_verified": user.is_verified,
-                "created_at": user.created_at,
-                "message": "Registration successful! Your account is pending admin approval. You will receive an email once approved.",
-                "requires_approval": True,
-            }
-        
-        # If user is active (e.g., teacher invitation), return normal response
-        return {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "full_name": user.full_name,
-            "phone": user.phone,
-            "profile_picture": user.profile_picture,
-            "bio": user.bio,
-            "role": user.role.value,
-            "is_verified": user.is_verified,
-            "is_active": user.is_active,
-            "last_login": user.last_login,
-            "created_at": user.created_at,
-            "updated_at": user.updated_at,
-        }
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    raise HTTPException(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        detail="Registration is only available through course applications. Please apply for a course to create an account.",
+    )
 
 
 # ============================================================
@@ -181,26 +128,26 @@ async def login(
                 "username": result["user"].username,
                 "full_name": result["user"].full_name,
                 "role": result["user"].role.value,
+                "is_active": result["user"].is_active,
             },
         }
     except HTTPException:
         raise
     except ValueError as e:
-        # ============================================================
-        # FIX: Better error message for inactive accounts
-        # ============================================================
-        if "pending approval" in str(e) or "inactive" in str(e).lower():
+        # Better error message for inactive accounts
+        error_msg = str(e)
+        if "pending approval" in error_msg.lower() or "inactive" in error_msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
-                    "message": str(e),
+                    "message": error_msg,
                     "code": "ACCOUNT_INACTIVE",
                     "requires_approval": True,
                 }
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail=error_msg,
         )
     except Exception as e:
         raise HTTPException(
@@ -246,21 +193,23 @@ def login_email(
                 "username": result["user"].username,
                 "full_name": result["user"].full_name,
                 "role": result["user"].role.value,
+                "is_active": result["user"].is_active,
             },
         }
     except ValueError as e:
-        if "pending approval" in str(e) or "inactive" in str(e).lower():
+        error_msg = str(e)
+        if "pending approval" in error_msg.lower() or "inactive" in error_msg.lower():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
-                    "message": str(e),
+                    "message": error_msg,
                     "code": "ACCOUNT_INACTIVE",
                     "requires_approval": True,
                 }
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
+            detail=error_msg,
         )
 
 
@@ -451,7 +400,7 @@ def reset_password(
 
 
 # ============================================================
-# NEW: ADMIN - ACTIVATE USER
+# ADMIN: ACTIVATE USER
 # ============================================================
 
 @router.put(
@@ -484,7 +433,7 @@ def activate_user(
 
 
 # ============================================================
-# NEW: ADMIN - DEACTIVATE USER
+# ADMIN: DEACTIVATE USER
 # ============================================================
 
 @router.put(

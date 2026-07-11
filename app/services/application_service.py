@@ -10,8 +10,10 @@ import logging
 from ..repositories.application_repository import ApplicationRepository
 from ..repositories.course_repository import CourseRepository
 from ..repositories.user_repository import UserRepository
+from ..repositories.enrollment_repository import EnrollmentRepository
 from ..models.application import ApplicationStatus
 from ..models.user import UserRole
+from ..models.enrollment import EnrollmentStatus, PaymentMethod
 from ..schemas.application import ApplicationSubmit, ApplicationUpdateStatus
 from ..core.security import generate_secure_password, get_password_hash
 from .email_service import EmailService
@@ -27,21 +29,27 @@ class ApplicationService:
         self.application_repo = ApplicationRepository(db)
         self.course_repo = CourseRepository(db)
         self.user_repo = UserRepository(db)
+        self.enrollment_repo = EnrollmentRepository(db)
         self.email_service = EmailService()
 
     # ============================================================
-    # SUBMIT APPLICATION (Public)
+    # SUBMIT APPLICATION (Public) - Creates User Account
     # ============================================================
 
     def submit_application(self, data: ApplicationSubmit) -> Dict[str, Any]:
         """
         Submit a new application.
         
+        This will:
+        1. Create a user account (is_active=False)
+        2. Create an application (status='pending')
+        3. Send confirmation email
+        
         Args:
             data: Application data
             
         Returns:
-            Created application
+            Created application with user_id
             
         Raises:
             ValueError: If validation fails
@@ -65,17 +73,56 @@ class ApplicationService:
             elif existing.status == ApplicationStatus.REJECTED:
                 raise ValueError("Your previous application was rejected. Please contact support.")
 
+        # ============================================================
+        # NEW: Create user account FIRST (is_active=False)
+        # ============================================================
+        email = data.email.lower().strip()
+        
+        # Check if user already exists
+        existing_user = self.user_repo.get_by_email(email)
+        
+        if existing_user:
+            # User exists, check if they are already enrolled
+            if existing_user.is_active:
+                raise ValueError("This email is already registered with an active account")
+            # Use existing user
+            user_id = existing_user.id
+            logger.info(f"👤 Using existing user: {email}")
+        else:
+            # Create new user with inactive status
+            username = email.split('@')[0]
+            if self.user_repo.is_username_taken(username):
+                username = f"{username}_{int(datetime.now().timestamp())}"
+            
+            # Generate temporary password (will be reset by user after activation)
+            temp_password = generate_secure_password(12)
+            hashed_password = get_password_hash(temp_password)
+            
+            user = self.user_repo.create(
+                email=email,
+                username=username,
+                hashed_password=hashed_password,
+                full_name=data.full_name.strip(),
+                phone=data.phone,
+                role=UserRole.STUDENT,
+                is_verified=False,
+                is_active=False,  # ← Inactive until approved
+            )
+            user_id = user.id
+            logger.info(f"👤 Created user: {email} (inactive)")
+
         # Create application
         application = self.application_repo.create(
-            email=data.email.lower().strip(),
+            email=email,
             full_name=data.full_name.strip(),
             phone=data.phone,
             course_id=data.course_id,
             message=data.message,
             status=ApplicationStatus.PENDING,
+            user_id=user_id,  # ← Link application to user
         )
 
-        # Send confirmation email to student (async but we don't wait)
+        # Send confirmation email to student
         try:
             import asyncio
             asyncio.create_task(
@@ -85,11 +132,30 @@ class ApplicationService:
                     course_title=course.title
                 )
             )
-            logger.info(f"📧 Confirmation email scheduled for {data.email}")
+            logger.info(f"📧 Confirmation email sent to {data.email}")
         except Exception as e:
             logger.error(f"❌ Failed to send confirmation email: {e}")
 
-        return self._format_application_response(application)
+        # Also send notification to admin
+        try:
+            import asyncio
+            asyncio.create_task(
+                self.email_service.send_admin_application_notification(
+                    applicant_name=data.full_name,
+                    applicant_email=data.email,
+                    course_title=course.title
+                )
+            )
+            logger.info(f"📧 Admin notification sent")
+        except Exception as e:
+            logger.error(f"❌ Failed to send admin notification: {e}")
+
+        return {
+            "application": self._format_application_response(application),
+            "user_id": user_id,
+            "application_id": application.id,
+            "message": "Application submitted successfully! You will receive an email once approved."
+        }
 
     # ============================================================
     # GET APPLICATIONS (Student)
@@ -187,7 +253,12 @@ class ApplicationService:
 
     def approve_application(self, application_id: int, admin_id: int, notes: Optional[str] = None) -> Dict[str, Any]:
         """
-        Approve an application and create user account.
+        Approve an application.
+        
+        This will:
+        1. Activate the user account (is_active=True)
+        2. Create an enrollment for the user in the course
+        3. Send approval email with credentials
         
         Args:
             application_id: Application ID
@@ -213,74 +284,74 @@ class ApplicationService:
         if application.status != ApplicationStatus.PENDING:
             raise ValueError(f"Application is already {application.status}")
 
-        # Get course for email
+        # Get course
         course = self.course_repo.get_by_id(application.course_id)
+        if not course:
+            raise ValueError("Course not found")
 
-        # Check if user already exists
-        existing_user = self.user_repo.get_by_email(application.email)
-        if existing_user:
-            # User exists, just approve application
-            application = self.application_repo.approve(application_id, admin_id, notes)
+        # ============================================================
+        # NEW: Activate user account
+        # ============================================================
+        user = self.user_repo.get_by_email(application.email)
+        
+        if not user:
+            # If user doesn't exist, create one
+            username = application.email.split('@')[0]
+            if self.user_repo.is_username_taken(username):
+                username = f"{username}_{application.id}"
             
-            # Send approval email (already has account)
-            try:
-                import asyncio
-                asyncio.create_task(
-                    self.email_service.send_application_approved(
-                        email=application.email,
-                        full_name=application.full_name,
-                        course_title=course.title if course else "Course",
-                        username=existing_user.username,
-                        password="Please use your existing password"
-                    )
-                )
-                logger.info(f"📧 Approval email sent to {application.email}")
-            except Exception as e:
-                logger.error(f"❌ Failed to send approval email: {e}")
+            password = generate_secure_password(12)
+            hashed_password = get_password_hash(password)
             
-            return {
-                "application": self._format_application_response(application),
-                "user_exists": True,
-                "user_id": existing_user.id,
-                "message": f"Application approved. User {existing_user.email} already exists.",
-            }
+            user = self.user_repo.create(
+                email=application.email,
+                username=username,
+                hashed_password=hashed_password,
+                full_name=application.full_name,
+                phone=application.phone,
+                role=UserRole.STUDENT,
+                is_verified=False,
+                is_active=True,
+            )
+            user_created = True
+            temp_password = password
+        else:
+            user.is_active = True
+            self.db.commit()
+            self.db.refresh(user)
+            user_created = False
+            temp_password = None
 
-        # Create new user account
-        password = generate_secure_password(12)
-        hashed_password = get_password_hash(password)
-
-        # Generate unique username
-        username = application.email.split('@')[0]
-        if self.user_repo.is_username_taken(username):
-            username = f"{username}_{application.id}"
-
-        user = self.user_repo.create(
-            email=application.email,
-            username=username,
-            hashed_password=hashed_password,
-            full_name=application.full_name,
-            phone=application.phone,
-            role=UserRole.STUDENT,
-            is_verified=False,
-            is_active=True,
+        # ============================================================
+        # NEW: Create enrollment
+        # ============================================================
+        from ..services.enrollment_service import EnrollmentService
+        enrollment_service = EnrollmentService(self.db)
+        
+        enrollment = enrollment_service.enroll_student(
+            student_id=user.id,
+            course_id=application.course_id,
+            payment_method="easypaisa",  # Default payment method
         )
 
         # Approve application
         application = self.application_repo.approve(application_id, admin_id, notes)
 
-        # Send approval email with credentials
+        # ============================================================
+        # NEW: Send approval email with credentials
+        # ============================================================
         try:
             import asyncio
             asyncio.create_task(
                 self.email_service.send_application_approved(
                     email=application.email,
                     full_name=application.full_name,
-                    course_title=course.title if course else "Course",
-                    username=username,
-                    password=password
+                    course_title=course.title,
+                    username=user.username,
+                    password=temp_password if user_created else "your existing password"
                 )
             )
-            logger.info(f"📧 Approval email with credentials sent to {application.email}")
+            logger.info(f"📧 Approval email sent to {application.email}")
         except Exception as e:
             logger.error(f"❌ Failed to send approval email: {e}")
 
@@ -292,10 +363,11 @@ class ApplicationService:
                 "username": user.username,
                 "full_name": user.full_name,
                 "role": user.role.value,
-                "password": password,
+                "is_active": user.is_active,
             },
-            "user_created": True,
-            "message": "Application approved and user account created.",
+            "enrollment_id": enrollment.id if enrollment else None,
+            "user_created": user_created,
+            "message": f"Application approved. User {'created' if user_created else 'activated'} and enrolled in course.",
         }
 
     def reject_application(self, application_id: int, admin_id: int, notes: str) -> Dict[str, Any]:
