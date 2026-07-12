@@ -7,11 +7,15 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 import html
 import re
+import logging
 
 from ..repositories.invitation_repository import InvitationRepository
 from ..repositories.user_repository import UserRepository
 from ..models.user import UserRole
 from ..schemas.invitation import InviteTeacher, AcceptInvitation, ResendInvitation
+from ..utils.email import send_invitation_email
+
+logger = logging.getLogger(__name__)
 
 
 class InvitationService:
@@ -80,8 +84,19 @@ class InvitationService:
             expiry_days=invite_data.expiry_days,
         )
         
-        # TODO: Send email with invitation link
-        # For now, just return the invitation
+        # ✅ Send email with invitation link
+        try:
+            send_invitation_email(
+                to_email=invitation.email,
+                to_name=invitation.full_name,
+                token=invitation.token,
+                expires_at=invitation.expires_at.strftime("%B %d, %Y"),
+                invited_by_name=admin.full_name if admin else "Admin"
+            )
+            logger.info(f"✅ Invitation email sent to {invitation.email}")
+        except Exception as e:
+            # Log error but don't fail the request
+            logger.error(f"⚠️ Failed to send invitation email to {invitation.email}: {e}")
         
         return self._format_invitation_response(invitation)
     
@@ -193,6 +208,11 @@ class InvitationService:
         self.invitation_repo.accept_invitation(accept_data.token)
         
         # TODO: Send welcome email
+        try:
+            # send_welcome_email(to_email=user.email, to_name=user.full_name)
+            pass
+        except Exception as e:
+            logger.error(f"⚠️ Failed to send welcome email to {user.email}: {e}")
         
         return {
             "user": {
@@ -254,7 +274,18 @@ class InvitationService:
             expiry_days=resend_data.expiry_days,
         )
         
-        # TODO: Resend email with new invitation link
+        # ✅ Resend email with new invitation link
+        try:
+            send_invitation_email(
+                to_email=invitation.email,
+                to_name=invitation.full_name,
+                token=invitation.token,
+                expires_at=invitation.expires_at.strftime("%B %d, %Y"),
+                invited_by_name=admin.full_name if admin else "Admin"
+            )
+            logger.info(f"✅ Invitation email resent to {invitation.email}")
+        except Exception as e:
+            logger.error(f"⚠️ Failed to resend invitation email to {invitation.email}: {e}")
         
         return self._format_invitation_response(invitation)
     
@@ -391,7 +422,7 @@ class InvitationService:
         # Get stats from repository (returns with 'total' field)
         stats = self.invitation_repo.get_stats()
         
-        # ✅ Convert 'total' to 'total_sent' for the schema
+        # Convert 'total' to 'total_sent' for the schema
         return {
             "total_sent": stats.get("total", 0),
             "pending": stats.get("pending", 0),
@@ -417,7 +448,7 @@ class InvitationService:
         # Get stats from repository (returns with 'total' field)
         stats = self.invitation_repo.get_inviter_stats(admin_id)
         
-        # ✅ Convert 'total' to 'total_sent' for the schema
+        # Convert 'total' to 'total_sent' for the schema
         return {
             "total_sent": stats.get("total", 0),
             "pending": stats.get("pending", 0),
@@ -484,3 +515,4 @@ class InvitationService:
             "created_at": invitation.created_at,
             "updated_at": invitation.updated_at,
         }
+    
