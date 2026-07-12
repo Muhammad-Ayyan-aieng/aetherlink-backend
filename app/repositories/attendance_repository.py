@@ -624,3 +624,5 @@ class AttendanceRepository(BaseRepository[Attendance]):
         total = query.count()
         records = query.offset(skip).limit(limit).all()
         return records, total
+
+        
