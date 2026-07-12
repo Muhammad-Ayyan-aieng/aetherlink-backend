@@ -25,8 +25,12 @@ class EmailService:
     def _init_sendgrid(self):
         """Initialize SendGrid client."""
         if settings.SENDGRID_API_KEY:
-            self.sendgrid_client = SendGridAPIClient(settings.SENDGRID_API_KEY)
-            logger.info("✅ SendGrid client initialized")
+            try:
+                self.sendgrid_client = SendGridAPIClient(settings.SENDGRID_API_KEY)
+                logger.info("✅ SendGrid client initialized")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize SendGrid: {e}")
+                self.sendgrid_client = None
         else:
             logger.warning("⚠️ SENDGRID_API_KEY not set. Email sending will be disabled.")
     
@@ -57,7 +61,8 @@ class EmailService:
         
         try:
             # Generate acceptance link
-            accept_link = f"https://aetherlink-frontend.onrender.com/accept-invitation?token={token}"
+            frontend_url = os.getenv("FRONTEND_URL", "https://aetherlink-frontend.onrender.com")
+            accept_link = f"{frontend_url}/accept-invitation?token={token}"
             
             # HTML email content
             html_content = f"""
@@ -121,7 +126,7 @@ class EmailService:
                     </div>
                     <div class="footer">
                         <p>© 2026 Aether Link. All rights reserved.</p>
-                        <p>Need help? Contact us at <a href="mailto:support@aetherlink.com">support@aetherlink.com</a></p>
+                        <p>Need help? Contact us at <a href="mailto:{settings.REPLY_TO}">{settings.REPLY_TO}</a></p>
                     </div>
                 </div>
             </body>
@@ -132,6 +137,7 @@ class EmailService:
             text_content = f"""
             You have been invited to join Aether Link as a teacher!
             
+            Invited by: {invited_by_name}
             Email: {to_email}
             Expires: {expires_at}
             
@@ -140,9 +146,12 @@ class EmailService:
             
             If you did not expect this invitation, please ignore this email.
             
+            Need help? Contact us at: {settings.REPLY_TO}
+            
             © 2026 Aether Link
             """
             
+            # Create message
             message = Mail(
                 from_email=settings.EMAIL_FROM,
                 to_emails=to_email,
@@ -151,6 +160,12 @@ class EmailService:
                 plain_text_content=text_content
             )
             
+            # ✅ Set reply-to from settings
+            if hasattr(settings, 'REPLY_TO') and settings.REPLY_TO:
+                message.reply_to = settings.REPLY_TO
+                logger.info(f"📧 Reply-To set to: {settings.REPLY_TO}")
+            
+            # Send email
             response = self.sendgrid_client.send(message)
             
             if response.status_code in [200, 201, 202]:
@@ -158,6 +173,7 @@ class EmailService:
                 return True
             else:
                 logger.error(f"❌ Failed to send email. Status: {response.status_code}")
+                logger.error(f"   Response: {response.body}")
                 return False
                 
         except Exception as e:

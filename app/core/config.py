@@ -57,8 +57,7 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5173",
             "https://aetherlink-frontend.onrender.com",
             "https://aetherlink.vercel.app",
-            # For development - allows any origin
-            "*"  # Add this for development
+            "*"  # For development
         ]
     )
     
@@ -76,11 +75,10 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = 20
     MAX_REQUEST_SIZE_MB: int = 10
     
-    # Allowed file extensions for upload
     ALLOWED_FILE_TYPES: List[str] = [
         "pdf", "pptx", "doc", "docx", 
         "png", "jpg", "jpeg", "gif", "webp",
-        "txt"  # Added for testing
+        "txt"
     ]
     
     # ============================================================
@@ -91,7 +89,6 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_KEY: str = Field(..., description="Supabase service role key")
     SUPABASE_BUCKET: str = Field(default="course-materials")
     
-    # Allowed MIME types for upload
     ALLOWED_MIME_TYPES: List[str] = Field(
         default=[
             "application/pdf",
@@ -103,7 +100,7 @@ class Settings(BaseSettings):
             "image/jpeg",
             "image/gif",
             "image/webp",
-            "text/plain"  # Added for testing
+            "text/plain"
         ]
     )
     
@@ -122,15 +119,16 @@ class Settings(BaseSettings):
     
     EMAIL_PROVIDER: str = "sendgrid"
     EMAIL_FROM: str = "noreply@aetherlink.com"
+    REPLY_TO: str = "support@aetherlink.com"  # ✅ ADDED: Reply-To email address
     SENDGRID_API_KEY: Optional[str] = None
     RESEND_API_KEY: Optional[str] = None
     
     # ============================================================
-    # REDIS CONFIGURATION  <-- MOVED INSIDE SETTINGS CLASS
+    # REDIS CONFIGURATION
     # ============================================================
     
     REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_CACHE_TTL: int = 300  # 5 minutes default cache TTL
+    REDIS_CACHE_TTL: int = 300
     
     # ============================================================
     # ZOOM
@@ -182,7 +180,9 @@ try:
     print(f"   Environment: {settings.ENVIRONMENT}")
     print(f"   Database: {settings.DATABASE_URL[:30]}...")
     print(f"   Supabase Storage: {settings.SUPABASE_BUCKET}")
-    print(f"   Redis: {settings.REDIS_URL}")  # <-- Added Redis to startup log
+    print(f"   Redis: {settings.REDIS_URL}")
+    print(f"   Email From: {settings.EMAIL_FROM}")      # ✅ Added
+    print(f"   Reply To: {settings.REPLY_TO}")          # ✅ Added
 except ValidationError as e:
     print("❌ Configuration error:")
     for error in e.errors():
