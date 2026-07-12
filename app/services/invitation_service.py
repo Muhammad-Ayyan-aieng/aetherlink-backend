@@ -382,13 +382,23 @@ class InvitationService:
             admin_id: Admin ID
             
         Returns:
-            Invitation statistics
+            Invitation statistics with total_sent field
         """
         admin = self.user_repo.get_by_id(admin_id)
         if not admin or admin.role != UserRole.ADMIN:
             raise ValueError("Admin access required")
         
-        return self.invitation_repo.get_stats()
+        # Get stats from repository (returns with 'total' field)
+        stats = self.invitation_repo.get_stats()
+        
+        # ✅ Convert 'total' to 'total_sent' for the schema
+        return {
+            "total_sent": stats.get("total", 0),
+            "pending": stats.get("pending", 0),
+            "accepted": stats.get("accepted", 0),
+            "expired": stats.get("expired", 0),
+            "acceptance_rate": stats.get("acceptance_rate", 0.0),
+        }
     
     def get_admin_invitation_stats(self, admin_id: int) -> Dict[str, Any]:
         """
@@ -404,7 +414,17 @@ class InvitationService:
         if not admin or admin.role != UserRole.ADMIN:
             raise ValueError("Admin access required")
         
-        return self.invitation_repo.get_inviter_stats(admin_id)
+        # Get stats from repository (returns with 'total' field)
+        stats = self.invitation_repo.get_inviter_stats(admin_id)
+        
+        # ✅ Convert 'total' to 'total_sent' for the schema
+        return {
+            "total_sent": stats.get("total", 0),
+            "pending": stats.get("pending", 0),
+            "accepted": stats.get("accepted", 0),
+            "expired": stats.get("expired", 0),
+            "acceptance_rate": stats.get("acceptance_rate", 0.0),
+        }
     
     # ============================================================
     # CLEANUP (Admin)

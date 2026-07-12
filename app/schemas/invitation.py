@@ -2,7 +2,7 @@
 # AETHER LINK - INVITATION SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, validator, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -19,7 +19,8 @@ class InviteTeacher(BaseModel):
     phone: Optional[str] = Field(None, max_length=20, description="Teacher's phone number")
     expiry_days: int = Field(7, ge=1, le=30, description="Invitation expiry in days")
     
-    @validator('phone')
+    @field_validator('phone')
+    @classmethod
     def validate_phone(cls, v: Optional[str]) -> Optional[str]:
         """Validate phone number format."""
         if v is None or v == "":
@@ -42,7 +43,8 @@ class AcceptInvitation(BaseModel):
     password: str = Field(..., min_length=8, max_length=72, description="Password (8-72 characters)")
     username: str = Field(..., min_length=3, max_length=50, description="Username")
     
-    @validator('username')
+    @field_validator('username')
+    @classmethod
     def validate_username(cls, v: str) -> str:
         """Validate username: alphanumeric and underscores only."""
         import re
@@ -50,7 +52,8 @@ class AcceptInvitation(BaseModel):
             raise ValueError('Username must contain only letters, numbers, and underscores')
         return v.lower()
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v: str) -> str:
         """Validate password strength."""
         if len(v) < 8:
@@ -97,8 +100,9 @@ class InvitationResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
 
 # ============================================================
@@ -114,9 +118,11 @@ class InvitationDetailResponse(BaseModel):
     expires_at: datetime = Field(..., description="Expiry timestamp")
     is_expired: bool = Field(..., description="Is invitation expired?")
     accepted: bool = Field(..., description="Is already accepted?")
+    invited_by: Optional[int] = Field(None, description="Admin ID who sent invitation")
     
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True
+    }
 
 
 # ============================================================
@@ -128,9 +134,6 @@ class InvitationListResponse(BaseModel):
     
     invitations: List[InvitationResponse] = Field(..., description="List of invitations")
     total: int = Field(..., description="Total number of invitations")
-    pending_count: int = Field(..., description="Pending invitations")
-    accepted_count: int = Field(..., description="Accepted invitations")
-    expired_count: int = Field(..., description="Expired invitations")
     page: int = Field(..., description="Current page number")
     page_size: int = Field(..., description="Page size")
     total_pages: int = Field(..., description="Total number of pages")
