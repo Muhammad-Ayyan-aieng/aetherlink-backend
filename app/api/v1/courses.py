@@ -218,7 +218,7 @@ def get_course(
 )
 def create_course(
     course_data: CourseCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """

@@ -32,14 +32,16 @@ class ApplicationSubmit(BaseModel):
     course_id: int = Field(..., gt=0, description="Course ID")
     message: Optional[str] = Field(None, max_length=500, description="Additional message")
 
-    @validator('email')
+    @field_validator('email')
+    @classmethod
     def validate_email(cls, v: str) -> str:
         """Validate email format."""
         if not v or '@' not in v:
             raise ValueError('Invalid email address')
         return v.lower().strip()
 
-    @validator('phone')
+    @field_validator('phone')
+    @classmethod
     def validate_phone(cls, v: Optional[str]) -> Optional[str]:
         """Validate phone number format."""
         if v is None or v == "":
@@ -60,7 +62,8 @@ class ApplicationUpdateStatus(BaseModel):
 
     notes: Optional[str] = Field(None, max_length=500, description="Admin notes")
 
-    @validator('notes')
+    @field_validator('notes')
+    @classmethod
     def validate_notes(cls, v: Optional[str]) -> Optional[str]:
         """Validate notes."""
         if v is not None and len(v.strip()) < 1:
@@ -90,8 +93,7 @@ class ApplicationResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================

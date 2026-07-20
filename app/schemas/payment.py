@@ -2,7 +2,7 @@
 # AETHER LINK - PAYMENT SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -43,7 +43,8 @@ class PaymentInitiate(BaseModel):
     enrollment_id: int = Field(..., gt=0, description="Enrollment ID")
     method: PaymentMethodEnum = Field(default=PaymentMethodEnum.EASYPAISA, description="Payment method")
     
-    @validator('enrollment_id')
+    @field_validator('enrollment_id')
+    @classmethod
     def validate_enrollment(cls, v: int) -> int:
         """Validate enrollment ID."""
         if v <= 0:
@@ -64,14 +65,16 @@ class PaymentUploadScreenshot(BaseModel):
     sender_name: Optional[str] = Field(None, max_length=255, description="Sender name")
     sender_phone: Optional[str] = Field(None, max_length=20, description="Sender phone")
     
-    @validator('screenshot_url')
+    @field_validator('screenshot_url')
+    @classmethod
     def validate_screenshot(cls, v: str) -> str:
         """Validate screenshot URL."""
         if not v.startswith(('http://', 'https://')):
             raise ValueError('Screenshot URL must be valid')
         return v
     
-    @validator('transaction_id')
+    @field_validator('transaction_id')
+    @classmethod
     def validate_transaction_id(cls, v: Optional[str]) -> Optional[str]:
         """Validate transaction ID format."""
         if v is None:
@@ -102,6 +105,13 @@ class PaymentReject(BaseModel):
     
     payment_id: int = Field(..., gt=0, description="Payment ID")
     reason: str = Field(..., min_length=5, max_length=500, description="Rejection reason")
+
+
+class PaymentRefund(BaseModel):
+    """Schema for refunding a payment (admin)."""
+
+    payment_id: int = Field(..., gt=0, description="Payment ID to refund")
+    reason: Optional[str] = Field(None, max_length=500, description="Optional refund reason")
 
 
 # ============================================================
@@ -145,8 +155,7 @@ class PaymentResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================

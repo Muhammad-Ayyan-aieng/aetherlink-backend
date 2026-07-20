@@ -6,6 +6,8 @@ import httpx
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
+import secrets
+import string
 
 from ..core.config import settings
 
@@ -176,6 +178,11 @@ class ZoomClient:
         Returns:
             Meeting details with id, join_url, start_url
         """
+        # Generate a secure alphanumeric password if none provided
+        if not password:
+            alphabet = string.ascii_letters + string.digits
+            password = ''.join(secrets.choice(alphabet) for _ in range(8))
+
         data = {
             "topic": topic[:200],  # Zoom limit: 200 chars
             "type": 2,  # Scheduled meeting
@@ -193,20 +200,25 @@ class ZoomClient:
                 "approval_type": 0,
                 "audio": "both",
                 "auto_recording": "cloud" if settings.ENVIRONMENT == "production" else "local",
-                "enforce_login": False,
+                # Enforce Zoom sign-in to help restrict meeting access
+                "enforce_login": True,
             }
         }
 
+        # Provide meeting password (generated above if not supplied)
         if password:
             data["password"] = password
 
         response = await self._request("POST", "/users/me/meetings", data=data)
-        
+
+        # Prefer Zoom's returned password if present, otherwise use our generated one
+        resp_password = response.get("password") or password
+
         return {
             "meeting_id": response.get("id"),
             "join_url": response.get("join_url"),
             "start_url": response.get("start_url"),
-            "password": response.get("password"),
+            "password": resp_password,
             "created_at": response.get("created_at"),
             "duration": response.get("duration"),
             "topic": response.get("topic"),

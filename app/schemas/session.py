@@ -2,7 +2,7 @@
 # AETHER LINK - SESSION SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, Field, validator, HttpUrl
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, timezone
 from enum import Enum
@@ -49,14 +49,16 @@ class SessionBase(BaseModel):
     meeting_notes: Optional[str] = Field(None, max_length=5000, description="Meeting notes")
     resources: Optional[dict] = Field(None, description="Additional resources (JSON)")
     
-    @validator('date_time')
+    @field_validator('date_time')
+    @classmethod
     def validate_date_time(cls, v: datetime) -> datetime:
         """Validate date_time is in the future."""
         if v < datetime.now(timezone.utc):
             raise ValueError('Date and time must be in the future')
         return v
     
-    @validator('zoom_join_url')
+    @field_validator('zoom_join_url')
+    @classmethod
     def validate_zoom_url(cls, v: Optional[str]) -> Optional[str]:
         """Validate Zoom URL format."""
         if v is None or v == "":
@@ -110,7 +112,8 @@ class SessionCreate(BaseModel):
             raise ValueError('Date and time must be in the future')
         return v
     
-    @validator('duration_minutes')
+    @field_validator('duration_minutes')
+    @classmethod
     def validate_duration(cls, v: int) -> int:
         """Validate duration is within limits."""
         if v < 1:
@@ -149,7 +152,8 @@ class SessionUpdate(BaseModel):
     meeting_notes: Optional[str] = Field(None, max_length=5000, description="Meeting notes")
     resources: Optional[dict] = Field(None, description="Additional resources (JSON)")
     
-    @validator('duration_minutes')
+    @field_validator('duration_minutes')
+    @classmethod
     def validate_duration(cls, v: Optional[int]) -> Optional[int]:
         """Validate duration is within limits."""
         if v is not None:
@@ -190,7 +194,8 @@ class RecordingAdd(BaseModel):
     recording_url: str = Field(..., max_length=500, description="Recording URL")
     recording_available: bool = Field(default=True, description="Recording available?")
     
-    @validator('recording_url')
+    @field_validator('recording_url')
+    @classmethod
     def validate_recording_url(cls, v: str) -> str:
         """Validate recording URL."""
         if not v.startswith(('https://', 'http://')):
@@ -231,8 +236,7 @@ class SessionResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================

@@ -2,7 +2,7 @@
 # AETHER LINK - COURSE SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, Field, validator, HttpUrl
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -50,7 +50,8 @@ class CourseBase(BaseModel):
             return v[:4997] + '...'
         return v
     
-    @validator('slug')
+    @field_validator('slug')
+    @classmethod
     def validate_slug(cls, v: str) -> str:
         """Validate slug format: lowercase, alphanumeric, hyphens only."""
         if not re.match(r'^[a-z0-9-]+$', v):
@@ -97,14 +98,16 @@ class CourseUpdate(BaseModel):
     meta_description: Optional[str] = Field(None, max_length=500, description="SEO description")
     meta_keywords: Optional[str] = Field(None, max_length=255, description="SEO keywords")
     
-    @validator('description')
+    @field_validator('description')
+    @classmethod
     def truncate_description(cls, v: Optional[str]) -> Optional[str]:
         """Truncate description to prevent validation errors."""
         if v and len(v) > 5000:
             return v[:4997] + '...'
         return v
     
-    @validator('slug')
+    @field_validator('slug')
+    @classmethod
     def validate_slug(cls, v: Optional[str]) -> Optional[str]:
         """Validate slug format."""
         if v is None:

@@ -2,7 +2,7 @@
 # AETHER LINK - ENROLLMENT SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -45,7 +45,8 @@ class EnrollmentCreate(BaseModel):
     payment_method: PaymentMethodEnum = Field(default=PaymentMethodEnum.EASYPAISA, description="Payment method")
     payment_screenshot: Optional[str] = Field(None, max_length=500, description="Payment screenshot URL")
     
-    @validator('payment_screenshot')
+    @field_validator('payment_screenshot')
+    @classmethod
     def validate_screenshot(cls, v: Optional[str]) -> Optional[str]:
         """Validate screenshot URL."""
         if v is None or v == "":
@@ -117,8 +118,7 @@ class EnrollmentResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================

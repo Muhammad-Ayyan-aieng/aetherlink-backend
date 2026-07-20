@@ -40,7 +40,7 @@ router = APIRouter(prefix="/invitations", tags=["Invitations"])
 )
 def send_invitation(
     invite_data: InviteTeacher,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """

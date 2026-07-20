@@ -8,16 +8,19 @@ import hmac
 import hashlib
 import json
 import logging
+import base64
+import time
 
 from ...core.database import get_db
 from ...core.config import settings
+from ...core.dependencies import rate_limiter
 from ...services.zoom_service import ZoomService
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/zoom")
+@router.post("/zoom", dependencies=[Depends(rate_limiter)])
 async def zoom_webhook(
     request: Request,
     db: Session = Depends(get_db),
@@ -31,18 +34,64 @@ async def zoom_webhook(
     - Recording completed
     """
     # Verify webhook signature (if configured)
+    raw_body = await request.body()
+
     if settings.ZOOM_WEBHOOK_SECRET:
         signature = request.headers.get("x-zm-signature")
+        timestamp = request.headers.get("x-zm-request-timestamp")
+
         if not signature:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing webhook signature"
             )
-        # Verify signature (implementation depends on Zoom's requirements)
-        # For now, we'll skip verification for simplicity
+
+        # Optional replay protection: validate timestamp within allowed window
+        try:
+            if timestamp:
+                req_ts = int(timestamp)
+                now = int(time.time())
+                if abs(now - req_ts) > 300:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Webhook timestamp outside allowed window"
+                    )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook timestamp"
+            )
+
+        secret = settings.ZOOM_WEBHOOK_SECRET
+        verified = False
+
+        # Try a couple of common signing formats: HMAC over body, and HMAC over timestamp+body
+        candidates = [raw_body]
+        if timestamp:
+            candidates.insert(0, timestamp.encode() + raw_body)
+
+        header_val = signature
+        if header_val.startswith("v0="):
+            header_val = header_val[3:]
+
+        for candidate in candidates:
+            digest = hmac.new(secret.encode(), candidate, hashlib.sha256).digest()
+            hex_sig = digest.hex()
+            b64_sig = base64.b64encode(digest).decode()
+
+            # Use constant-time compare
+            if hmac.compare_digest(header_val, hex_sig) or hmac.compare_digest(header_val, b64_sig):
+                verified = True
+                break
+
+        if not verified:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature"
+            )
 
     try:
-        body = await request.json()
+        body = json.loads(raw_body) if raw_body else {}
         event = body.get("event")
         payload = body.get("payload", {})
 
@@ -83,7 +132,7 @@ async def handle_meeting_started(payload: dict, db: Session) -> None:
         return
     
     # Find session by zoom_meeting_id and update status
-    from ..repositories.session_repository import SessionRepository
+    from ...repositories.session_repository import SessionRepository
     session_repo = SessionRepository(db)
     
     # Update session status (you may want to add this logic)

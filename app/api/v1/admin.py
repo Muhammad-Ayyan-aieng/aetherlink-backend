@@ -37,7 +37,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
     description="Get admin dashboard overview.",
 )
 def get_dashboard(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -149,7 +149,7 @@ def get_admin_users(
     search: Optional[str] = Query(None, description="Search by name or email"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -239,7 +239,7 @@ def get_admin_courses(
     search: Optional[str] = Query(None, description="Search by title"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -329,7 +329,7 @@ def get_admin_payments(
     status: Optional[str] = Query(None, description="Filter by status: pending, awaiting_verification, verified, rejected, refunded"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -425,7 +425,7 @@ def get_attendance_report(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     format: str = Query("json", description="Output format: json, csv"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -515,7 +515,7 @@ def get_attendance_report(
 )
 def get_revenue_report(
     period: str = Query("month", description="Period: day, week, month, quarter, year"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -589,7 +589,7 @@ def get_revenue_report(
     description="Get student engagement report (admin only).",
 )
 def get_engagement_report(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """

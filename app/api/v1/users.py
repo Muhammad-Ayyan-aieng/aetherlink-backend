@@ -87,7 +87,7 @@ def update_me(
     dependencies=[Depends(rate_limiter)],
     summary="Update profile picture",
 )
-def update_profile_picture(
+async def update_profile_picture(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -102,15 +102,13 @@ def update_profile_picture(
     """
     try:
         import json
-        
-        # Get the request body
-        body = request.body()
-        
-        # Parse JSON body
+
+        # Get the request body (await bytes)
+        raw = await request.body()
         try:
-            data = json.loads(body)
+            data = json.loads(raw.decode('utf-8') if isinstance(raw, (bytes, bytearray)) else raw)
             picture_url = data.get("picture_url")
-        except:
+        except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid JSON body. Expected: {\"picture_url\": \"...\"}"

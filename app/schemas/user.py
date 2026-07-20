@@ -2,7 +2,7 @@
 # AETHER LINK - USER SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, EmailStr, Field, validator, HttpUrl
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime
 import re
@@ -41,8 +41,7 @@ class UserResponse(BaseModel):
     created_at: datetime = Field(..., description="Account creation time")
     updated_at: Optional[datetime] = Field(None, description="Last update time")
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================
@@ -57,7 +56,8 @@ class UserUpdate(BaseModel):
     bio: Optional[str] = Field(None, max_length=500, description="User bio")
     profile_picture: Optional[str] = Field(None, max_length=500, description="Profile picture URL")
     
-    @validator('phone')
+    @field_validator('phone')
+    @classmethod
     def validate_phone(cls, v: Optional[str]) -> Optional[str]:
         """Validate phone number format (basic)."""
         if v is None:
@@ -68,7 +68,8 @@ class UserUpdate(BaseModel):
             raise ValueError('Invalid phone number format')
         return v
     
-    @validator('profile_picture')
+    @field_validator('profile_picture')
+    @classmethod
     def validate_profile_picture(cls, v: Optional[str]) -> Optional[str]:
         """Validate profile picture URL."""
         if v is None or v == "":

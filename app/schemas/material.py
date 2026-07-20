@@ -2,7 +2,7 @@
 # AETHER LINK - MATERIAL SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -44,7 +44,8 @@ class MaterialUpload(BaseModel):
 
     course_id: int = Field(..., gt=0, description="Course ID")
 
-    @validator('file_type')
+    @field_validator('file_type')
+    @classmethod
     def validate_file_type(cls, v: MaterialTypeEnum) -> MaterialTypeEnum:
         """Validate file type."""
         allowed = [
@@ -59,8 +60,9 @@ class MaterialUpload(BaseModel):
             raise ValueError(f'Invalid file type. Allowed: {[m.value for m in allowed]}')
         return v
 
-    @validator('link_url')
-    def validate_link_url(cls, v: Optional[str], values: dict) -> Optional[str]:
+    @field_validator('link_url')
+    @classmethod
+    def validate_link_url(cls, v: Optional[str]) -> Optional[str]:
         """Validate link URL."""
         if v is None or v == "":
             return v
@@ -68,7 +70,8 @@ class MaterialUpload(BaseModel):
             raise ValueError('Link URL must be a valid URL')
         return v
 
-    @validator('file_size')
+    @field_validator('file_size')
+    @classmethod
     def validate_file_size(cls, v: Optional[int]) -> Optional[int]:
         """Validate file size (max 20 MB)."""
         if v is None:
@@ -78,8 +81,9 @@ class MaterialUpload(BaseModel):
             raise ValueError(f'File size must be less than {max_size / (1024 * 1024):.0f} MB')
         return v
 
-    @validator('link_url', always=True)
-    def validate_link_required(cls, v: Optional[str], values: dict) -> Optional[str]:
+    @field_validator('link_url')
+    @classmethod
+    def validate_link_required(cls, v: Optional[str]) -> Optional[str]:
         """Validate link_url is provided when file_type is LINK."""
         file_type = values.get('file_type')
         if file_type == MaterialTypeEnum.LINK and not v:
@@ -106,7 +110,8 @@ class MaterialUpdate(BaseModel):
     # Link updates
     link_url: Optional[str] = Field(None, max_length=500, description="Link URL")
 
-    @validator('link_url')
+    @field_validator('link_url')
+    @classmethod
     def validate_link_url(cls, v: Optional[str]) -> Optional[str]:
         """Validate link URL."""
         if v is None or v == "":
@@ -149,8 +154,7 @@ class MaterialResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================

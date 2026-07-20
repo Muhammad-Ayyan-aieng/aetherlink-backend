@@ -4,8 +4,8 @@
 
 import os
 from typing import List, Optional
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator, ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, ValidationError, field_validator
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     
     DATABASE_URL: str = Field(..., description="PostgreSQL connection string")
     
-    @validator("DATABASE_URL")
+    @field_validator("DATABASE_URL")
+    @classmethod
     def validate_database_url(cls, v: str) -> str:
         if not v.startswith("postgresql://"):
             raise ValueError("DATABASE_URL must start with postgresql://")
@@ -57,7 +58,6 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5173",
             "https://aetherlink-frontend.onrender.com",
             "https://aetherlink.vercel.app",
-            "*"  # For development
         ]
     )
     
@@ -157,17 +157,28 @@ class Settings(BaseSettings):
     # VALIDATION ON STARTUP
     # ============================================================
     
-    @validator("ENVIRONMENT")
+    @field_validator("ENVIRONMENT")
+    @classmethod
     def validate_environment(cls, v: str) -> str:
         allowed = ["development", "staging", "production"]
         if v not in allowed:
             raise ValueError(f"ENVIRONMENT must be one of {allowed}")
         return v
+
+    @field_validator("ALLOWED_ORIGINS")
+    @classmethod
+    def validate_allowed_origins(cls, v: List[str]) -> List[str]:
+        if not v:
+            raise ValueError("ALLOWED_ORIGINS cannot be empty")
+        if "*" in v:
+            raise ValueError("ALLOWED_ORIGINS must not include '*'")
+        return v
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 
 # ============================================================

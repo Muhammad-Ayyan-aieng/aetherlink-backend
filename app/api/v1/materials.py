@@ -144,7 +144,7 @@ def get_enrolled_course_materials(
     published_only: bool = Query(False, description="Only published materials"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -205,7 +205,7 @@ def get_teacher_materials(
     published_only: bool = Query(False, description="Only published materials"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -269,7 +269,7 @@ def get_teacher_materials(
 )
 def get_material_stats(
     course_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -384,7 +384,7 @@ async def upload_material(
     file_type: str = Form(..., description="File type: pdf, pptx, doc, docx, link"),
     file: Optional[UploadFile] = File(None, description="File to upload (for file types)"),
     link_url: Optional[str] = Form(None, description="Link URL (for link type)"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -444,7 +444,7 @@ async def upload_material(
 def update_material(
     material_id: int,
     update_data: MaterialUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -480,7 +480,7 @@ def update_material(
 )
 def delete_material(
     material_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> None:
     """

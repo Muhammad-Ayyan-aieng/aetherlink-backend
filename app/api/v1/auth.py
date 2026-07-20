@@ -269,6 +269,39 @@ def logout() -> Any:
     return LogoutResponse(message="Successfully logged out. Please remove the token client-side.")
 
 
+@router.post(
+    "/revoke-refresh",
+    summary="Revoke a refresh token",
+    description="Revoke a single refresh token (opaque token string).",
+)
+def revoke_refresh(
+    refresh_data: RefreshToken,
+    db: Session = Depends(get_db),
+) -> Any:
+    try:
+        auth_service = AuthService(db)
+        result = auth_service.revoke_refresh_token(refresh_data.refresh_token)
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post(
+    "/revoke-all",
+    summary="Revoke all refresh tokens for current user",
+    description="Revoke all active refresh tokens for the authenticated user.",
+)
+def revoke_all(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    auth_service = AuthService(db)
+    return auth_service.revoke_all_tokens_for_user(current_user.id)
+
+
 # ============================================================
 # GET CURRENT USER
 # ============================================================

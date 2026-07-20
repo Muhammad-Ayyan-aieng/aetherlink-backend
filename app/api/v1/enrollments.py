@@ -301,7 +301,7 @@ def get_enrollment(
 def verify_payment(
     enrollment_id: int,
     verification_data: PaymentVerification,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -343,7 +343,7 @@ def verify_payment(
 def reject_payment(
     enrollment_id: int,
     verification_data: PaymentVerification,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -546,7 +546,7 @@ def cancel_enrollment(
 )
 def get_course_enrollments(
     course_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """

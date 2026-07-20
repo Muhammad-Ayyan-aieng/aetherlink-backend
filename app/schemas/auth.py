@@ -2,7 +2,7 @@
 # AETHER LINK - AUTH SCHEMAS
 # ============================================================
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime
 import re
@@ -21,14 +21,16 @@ class UserRegister(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=100, description="User's full name")
     phone: Optional[str] = Field(None, max_length=20, description="Phone number")
     
-    @validator('username')
+    @field_validator('username')
+    @classmethod
     def validate_username(cls, v: str) -> str:
         """Validate username: alphanumeric and underscores only."""
         if not re.match(r'^[a-zA-Z0-9_]+$', v):
             raise ValueError('Username must contain only letters, numbers, and underscores')
         return v.lower()
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v: str) -> str:
         """Validate password strength."""
         if len(v) < 8:

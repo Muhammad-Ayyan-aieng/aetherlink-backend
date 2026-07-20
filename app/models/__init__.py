@@ -30,6 +30,7 @@ from .invitations import TeacherInvitation
 
 # Applications
 from .application import Application, ApplicationStatus  # ← ADD THIS
+from .refresh_token import RefreshToken
 
 # Payments
 from .payments import Payment, PaymentStatus, PaymentMethod
@@ -57,4 +58,5 @@ __all__ = [
     "TeacherInvitation",
     "Application",          # ← ADD THIS
     "ApplicationStatus",    # ← ADD THIS
+    "RefreshToken",
 ]

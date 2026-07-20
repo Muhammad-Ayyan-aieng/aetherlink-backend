@@ -14,13 +14,18 @@ from ..core.security import (
     get_password_hash,
     verify_password,
     create_access_token,
-    create_refresh_token,
-    decode_token,
     validate_password_strength,
 )
+from ..repositories.refresh_token_repository import RefreshTokenRepository
+import hashlib
+import secrets
+from datetime import timedelta
 from ..models.user import User, UserRole
 from ..schemas.auth import UserRegister, UserLogin, PasswordChange
 from ..utils.sanitizer import sanitize_text, sanitize_email, sanitize_username
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -30,6 +35,7 @@ class AuthService:
         self.db = db
         self.user_repo = UserRepository(db)
         self.invitation_repo = InvitationRepository(db)
+        self.refresh_token_repo = RefreshTokenRepository(db)
     
     # ============================================================
     # REGISTER - Teachers active, Students inactive
@@ -190,12 +196,24 @@ class AuthService:
         }
         
         access_token = create_access_token(token_data)
-        refresh_token = create_refresh_token(token_data)
-        
+
+        # Generate opaque refresh token and store its hash
+        refresh_token_str = secrets.token_urlsafe(64)
+        expires_at = datetime.utcnow() + timedelta(days=7)
+        self.refresh_token_repo.create(
+            user_id=user.id,
+            token_str=refresh_token_str,
+            expires_at=expires_at,
+            ip_address=None,
+            user_agent=None,
+        )
+
+        logger.info("Issued refresh token for user_id=%s", user.id)
+
         return {
             "user": user,
             "access_token": access_token,
-            "refresh_token": refresh_token,
+            "refresh_token": refresh_token_str,
             "token_type": "bearer",
             "expires_in": 60 * 60,  # 1 hour
         }
@@ -290,47 +308,83 @@ class AuthService:
         Raises:
             ValueError: If refresh token invalid
         """
-        # Decode token
-        try:
-            payload = decode_token(refresh_token)
-        except Exception:
+        # Treat refresh_token as opaque token string; look up by hash
+        token_record = self.refresh_token_repo.get_by_hash(refresh_token)
+        if not token_record:
             raise ValueError("Invalid refresh token")
-        
-        # Check token type
-        if payload.get("type") != "refresh":
-            raise ValueError("Invalid token type")
-        
-        # Get user
-        user_id = payload.get("sub")
-        if not user_id:
-            raise ValueError("Invalid token")
-        
-        user = self.user_repo.get_by_id(int(user_id))
+
+        # Check expiration and revocation
+        if token_record.revoked:
+            # Possible token reuse - revoke all tokens for this user
+            self.refresh_token_repo.revoke_all_for_user(token_record.user_id)
+            raise ValueError("Refresh token revoked")
+
+        if token_record.expires_at < datetime.utcnow():
+            raise ValueError("Refresh token expired")
+
+        user = self.user_repo.get_by_id(token_record.user_id)
         if not user:
             raise ValueError("User not found")
-        
-        # ============================================================
-        # Check if user is active before refreshing token
-        # ============================================================
+
         if not user.is_active:
             raise ValueError("User account is inactive")
-        
-        # Generate new tokens
+
+        # Rotate: create new refresh token and revoke old one
+        new_refresh_token_str = secrets.token_urlsafe(64)
+        new_expires = datetime.utcnow() + timedelta(days=7)
+        new_record = self.refresh_token_repo.create(
+            user_id=user.id,
+            token_str=new_refresh_token_str,
+            expires_at=new_expires,
+            ip_address=None,
+            user_agent=None,
+        )
+
+        # Mark old token revoked and link to new
+        self.refresh_token_repo.mark_replaced(token_record, new_record)
+
+        logger.info(
+            "Rotated refresh token for user_id=%s; old_token_id=%s replaced_by=%s",
+            user.id,
+            getattr(token_record, 'id', token_record.get('id') if isinstance(token_record, dict) else None),
+            getattr(new_record, 'id', new_record.get('id') if isinstance(new_record, dict) else None),
+        )
+
         token_data = {
             "sub": str(user.id),
             "email": user.email,
             "role": user.role.value,
         }
-        
+
         new_access_token = create_access_token(token_data)
-        new_refresh_token = create_refresh_token(token_data)
-        
+
         return {
             "access_token": new_access_token,
-            "refresh_token": new_refresh_token,
+            "refresh_token": new_refresh_token_str,
             "token_type": "bearer",
             "expires_in": 60 * 60,
         }
+
+    def revoke_refresh_token(self, refresh_token: str) -> Dict[str, Any]:
+        """
+        Revoke a specific refresh token (by opaque token string).
+        """
+        token_record = self.refresh_token_repo.get_by_hash(refresh_token)
+        if not token_record:
+            raise ValueError("Invalid refresh token")
+        self.refresh_token_repo.revoke(token_record)
+        logger.info("Revoked refresh token for user_id=%s, token_id=%s",
+                    getattr(token_record, 'user_id', token_record.get('user_id') if isinstance(token_record, dict) else None),
+                    getattr(token_record, 'id', token_record.get('id') if isinstance(token_record, dict) else None))
+        return {"message": "Refresh token revoked"}
+
+    def revoke_all_tokens_for_user(self, user_id: int) -> Dict[str, Any]:
+        """
+        Revoke all active refresh tokens for a user.
+        """
+        count = self.refresh_token_repo.revoke_all_for_user(user_id)
+        logger.info("Revoked all refresh tokens for user_id=%s, count=%s", user_id, count)
+        return {"message": f"Revoked {count} refresh tokens"}
     
     # ============================================================
     # CHANGE PASSWORD

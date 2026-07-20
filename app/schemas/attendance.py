@@ -2,7 +2,7 @@
 # AETHER LINK - ATTENDANCE SCHEMAS ⭐ CRITICAL
 # ============================================================
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -32,7 +32,8 @@ class AttendanceMark(BaseModel):
     status: AttendanceStatusEnum = Field(..., description="Attendance status")
     remarks: Optional[str] = Field(None, max_length=500, description="Teacher remarks")
     
-    @validator('status')
+    @field_validator('status')
+    @classmethod
     def validate_status(cls, v: AttendanceStatusEnum) -> AttendanceStatusEnum:
         """Validate status."""
         if v == AttendanceStatusEnum.MADE_UP:
@@ -61,7 +62,8 @@ class WatchRecording(BaseModel):
     
     watched_percentage: int = Field(..., ge=0, le=100, description="Percentage of recording watched (0-100)")
     
-    @validator('watched_percentage')
+    @field_validator('watched_percentage')
+    @classmethod
     def validate_percentage(cls, v: int) -> int:
         """Ensure percentage is between 0 and 100."""
         if v < 0:
@@ -82,7 +84,8 @@ class BulkAttendanceMark(BaseModel):
     present_student_ids: List[int] = Field(default=[], description="List of present student IDs")
     excused_student_ids: List[int] = Field(default=[], description="List of excused student IDs")
     
-    @validator('present_student_ids', 'excused_student_ids')
+    @field_validator('present_student_ids', 'excused_student_ids')
+    @classmethod
     def validate_unique_students(cls, v: List[int]) -> List[int]:
         """Ensure no duplicate student IDs."""
         if len(v) != len(set(v)):
@@ -117,8 +120,7 @@ class AttendanceResponse(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ============================================================

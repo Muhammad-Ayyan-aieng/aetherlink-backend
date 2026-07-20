@@ -19,6 +19,7 @@ from ...schemas.payment import (
     PaymentUploadScreenshot,
     PaymentVerify,
     PaymentReject,
+    PaymentRefund,
     PaymentResponse,
     PaymentHistoryResponse,
     PaymentListResponse,
@@ -184,7 +185,7 @@ def get_payment_history(
     description="Get all pending payment verifications (admin only).",
 )
 def get_pending_payments(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -216,7 +217,7 @@ def get_pending_payments(
 )
 def verify_payment(
     verify_data: PaymentVerify,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -293,7 +294,7 @@ def reject_payment(
     description="Refund a payment (admin only).",
 )
 def refund_payment(
-    refund_data: dict,
+    refund_data: PaymentRefund,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
@@ -306,14 +307,8 @@ def refund_payment(
     - **reason**: Optional refund reason
     """
     try:
-        payment_id = refund_data.get("payment_id")
-        reason = refund_data.get("reason")
-        
-        if not payment_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="payment_id required",
-            )
+        payment_id = refund_data.payment_id
+        reason = refund_data.reason
         
         payment_service = PaymentService(db)
         result = payment_service.refund_payment(

@@ -64,9 +64,58 @@ def get_course_sessions(
             skip=skip,
             limit=limit,
         )
-        
+
+        # Redact Zoom join/start URLs and passwords for public listing.
+        safe_sessions = []
+        for s in result["sessions"]:
+            try:
+                sess = {
+                    "id": s.id,
+                    "course_id": s.course_id,
+                    "session_number": s.session_number,
+                    "title": s.title,
+                    "description": s.description,
+                    "date_time": s.date_time,
+                    "duration_minutes": s.duration_minutes,
+                    "status": s.status,
+                    # Do NOT include zoom_join_url/zoom_start_url/zoom_password in public response
+                    "zoom_meeting_id": s.zoom_meeting_id,
+                    "zoom_join_url": None,
+                    "zoom_start_url": None,
+                    "zoom_password": None,
+                    "recording_url": s.recording_url,
+                    "recording_available": s.recording_available,
+                    "meeting_notes": s.meeting_notes,
+                    "resources": s.resources,
+                    "created_at": s.created_at,
+                    "updated_at": s.updated_at,
+                }
+            except Exception:
+                # Fallback: include minimal fields
+                sess = {
+                    "id": getattr(s, 'id', None),
+                    "course_id": getattr(s, 'course_id', None),
+                    "session_number": getattr(s, 'session_number', None),
+                    "title": getattr(s, 'title', None),
+                    "description": getattr(s, 'description', None),
+                    "date_time": getattr(s, 'date_time', None),
+                    "duration_minutes": getattr(s, 'duration_minutes', None),
+                    "status": getattr(s, 'status', None),
+                    "zoom_meeting_id": getattr(s, 'zoom_meeting_id', None),
+                    "zoom_join_url": None,
+                    "zoom_start_url": None,
+                    "zoom_password": None,
+                    "recording_url": getattr(s, 'recording_url', None),
+                    "recording_available": getattr(s, 'recording_available', False),
+                    "meeting_notes": getattr(s, 'meeting_notes', None),
+                    "resources": getattr(s, 'resources', None),
+                    "created_at": getattr(s, 'created_at', None),
+                    "updated_at": getattr(s, 'updated_at', None),
+                }
+            safe_sessions.append(sess)
+
         return {
-            "sessions": result["sessions"],
+            "sessions": safe_sessions,
             "total": result["total"],
             "page": result["page"],
             "page_size": result["page_size"],
@@ -121,7 +170,7 @@ def get_session(
 )
 async def create_session(
     session_data: SessionCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -298,7 +347,7 @@ async def delete_session(
 )
 async def create_zoom_meeting(
     session_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -354,7 +403,7 @@ async def create_zoom_meeting(
 )
 async def sync_zoom_attendance(
     session_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -390,7 +439,7 @@ async def sync_zoom_attendance(
 )
 async def sync_zoom_recordings(
     session_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -436,7 +485,7 @@ async def sync_zoom_recordings(
 def add_recording(
     session_id: int,
     recording_data: RecordingAdd,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -475,7 +524,7 @@ def add_recording(
 )
 def complete_session(
     session_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -508,7 +557,7 @@ def complete_session(
 )
 def cancel_session(
     session_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -580,7 +629,7 @@ def get_upcoming_sessions(
     description="Get upcoming sessions for the current teacher.",
 )
 def get_teacher_upcoming(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """

@@ -130,7 +130,7 @@ def get_all_applications(
     search: Optional[str] = Query(None, description="Search by email or name"),
     skip: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=100, description="Results limit"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """

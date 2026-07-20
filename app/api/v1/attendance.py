@@ -252,7 +252,7 @@ def mark_made_up(
 )
 def mark_attendance(
     mark_data: AttendanceMark,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -290,7 +290,7 @@ def mark_attendance(
 )
 def bulk_mark_attendance(
     bulk_data: BulkAttendanceMark,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -327,7 +327,7 @@ def bulk_mark_attendance(
 )
 def get_session_attendance(
     session_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -361,7 +361,7 @@ def get_session_attendance(
 )
 def get_course_attendance(
     course_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_teacher_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -534,7 +534,7 @@ async def auto_mark_attendance(
     description="Get overall attendance statistics (admin only).",
 )
 def get_overall_attendance_stats(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
