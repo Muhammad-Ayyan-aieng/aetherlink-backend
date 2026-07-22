@@ -1,60 +1,126 @@
 # ============================================================
 # AETHER LINK - SCHEMAS
 # ============================================================
+# Complete export of all schemas for easy importing
+# ============================================================
 
-# Auth Schemas
+# ============================================================
+# AUTH SCHEMAS
+# ============================================================
 from .auth import (
-    UserRegister,
-    UserLogin,
+    # Enums
+    MFAType,
+    DeviceType,
+    # Base
+    AuthBase,
+    # Register
+    RegisterRequest,
+    # Login
+    LoginRequest,
+    LoginResponse,
+    # MFA
+    MFASetupRequest,
+    MFASetupResponse,
+    MFAVerifyRequest,
+    MFAVerifyResponse,
+    MFADisableRequest,
+    # Token
     TokenResponse,
-    RefreshToken,
+    RefreshTokenRequest,
     TokenData,
-    PasswordChange,
-    PasswordReset,
-    PasswordResetConfirm,
-    EmailVerification,
-    EmailVerificationConfirm,
+    TokenIntrospectResponse,
+    # Password
+    PasswordChangeRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    # Email Verification
+    VerifyEmailRequest,
+    VerifyEmailConfirmRequest,
+    ResendVerificationRequest,
+    # Logout
+    LogoutRequest,
+    LogoutAllDevicesRequest,
     LogoutResponse,
+    # Session
+    SessionInfo,
+    SessionListResponse,
+    RevokeSessionRequest,
+    # Device Trust
+    DeviceTrustRequest,
+    DeviceTrustResponse,
+    # Rate Limit
+    RateLimitStatus,
+    # Account Lockout
+    AccountLockoutStatus,
 )
 
-# User Schemas
+# ============================================================
+# USER SCHEMAS
+# ============================================================
 from .user import (
     UserRoleEnum,
+    UserBase,
     UserResponse,
+    UserProfileResponse,
+    UserAdminResponse,
     UserUpdate,
     UserRoleUpdate,
     UserStatusUpdate,
+    UserLockRequest,
+    UserListRequest,
     UserListResponse,
+    AdminUserListResponse,
+    BulkUserActionRequest,
+    BulkUserActionResponse,
+    UserStatistics,
 )
 
-# Course Schemas
+# ============================================================
+# COURSE SCHEMAS
+# ============================================================
 from .course import (
     CourseStatusEnum,
+    CourseLevelEnum,
+    CourseCategoryEnum,
     CourseBase,
     CourseCreate,
     CourseUpdate,
     CourseResponse,
     SessionSummary,
     CourseDetailResponse,
+    CourseListRequest,
     CourseListResponse,
+    CourseStatistics,
+    CoursePublishRequest,
+    CourseTeacherAssignment,
 )
 
-# Session Schemas
+# ============================================================
+# SESSION SCHEMAS
+# ============================================================
 from .session import (
     SessionStatusEnum,
+    SessionTypeEnum,
     SessionBase,
     SessionCreate,
     SessionUpdate,
     RecordingAdd,
     SessionResponse,
     SessionDetailResponse,
+    SessionListRequest,
     SessionListResponse,
+    SessionStatistics,
+    SessionZoomSync,
+    SessionZoomSyncResponse,
 )
 
-# Enrollment Schemas
+# ============================================================
+# ENROLLMENT SCHEMAS
+# ============================================================
 from .enrollment import (
     EnrollmentStatusEnum,
     PaymentMethodEnum,
+    EnrollmentSourceEnum,
     EnrollmentCreate,
     EnrollmentUpdate,
     PaymentVerification,
@@ -62,56 +128,461 @@ from .enrollment import (
     EnrollmentResponse,
     EnrollmentDetailResponse,
     StudentEnrollmentResponse,
+    EnrollmentListRequest,
     EnrollmentListResponse,
+    EnrollmentStatistics,
+    EnrollmentBulkAction,
+    EnrollmentExportRequest,
 )
 
-# Attendance Schemas ⭐ CRITICAL
+# ============================================================
+# ATTENDANCE SCHEMAS ⭐ CRITICAL
+# ============================================================
 from .attendance import (
     AttendanceStatusEnum,
+    MarkedByEnum,
     AttendanceMark,
     AttendanceUpdate,
     WatchRecording,
-    BulkAttendanceMark,
+    ZoomAttendanceSync,
+    ZoomAttendanceData,
     AttendanceResponse,
     MissedSessionResponse,
     AttendanceSummary,
     StudentAttendanceSummary,
     CourseAttendanceResponse,
+    AttendanceListRequest,
     AttendanceListResponse,
+    AttendanceStatistics,
 )
 
-# Payment Schemas
+# ============================================================
+# PAYMENT SCHEMAS
+# ============================================================
 from .payment import (
     PaymentStatusEnum,
     PaymentMethodEnum as PaymentMethodSchemaEnum,
+    PaymentTypeEnum,
+    PaymentGatewayEnum,
     PaymentInitiate,
     PaymentUploadScreenshot,
     PaymentVerify,
     PaymentReject,
+    PaymentRefund,
+    PaymentRetry,
     PaymentResponse,
     PaymentHistoryResponse,
+    PaymentListRequest,
     PaymentListResponse,
     PaymentSummary,
+    PaymentWebhook,
+    PaymentWebhookResponse,
 )
 
-# Material Schemas
+# ============================================================
+# MATERIAL SCHEMAS
+# ============================================================
 from .material import (
     MaterialTypeEnum,
+    MaterialVisibilityEnum,
     MaterialUpload,
     MaterialUpdate,
     MaterialResponse,
+    MaterialListRequest,
     MaterialListResponse,
+    MaterialBulkOperation,
+    MaterialStatistics,
 )
 
-# Invitation Schemas
+# ============================================================
+# INVITATION SCHEMAS
+# ============================================================
 from .invitation import (
+    InvitationStatusEnum,
     InviteTeacher,
     AcceptInvitation,
     ResendInvitation,
+    RevokeInvitation,
     InvitationResponse,
     InvitationDetailResponse,
+    InvitationListRequest,
     InvitationListResponse,
     InvitationSummary,
+    BulkInvitation,
+    BulkInvitationResponse,
+    InvitationReminder,
+)
+
+# ============================================================
+# APPLICATION SCHEMAS
+# ============================================================
+from .application import (
+    ApplicationStatusEnum,
+    ApplicationSourceEnum,
+    ApplicationPriorityEnum,
+    ApplicationSubmit,
+    ApplicationUpdateStatus,
+    ApplicationResponse,
+    ApplicationListRequest,
+    ApplicationListResponse,
+    ApplicationStats,
+    ApplicationFollowUp,
+    ApplicationBulkAction,
+    ApplicationConvertRequest,
+)
+
+# ============================================================
+# NOTIFICATION SCHEMAS
+# ============================================================
+from .notification import (
+    NotificationTypeEnum,
+    NotificationPriorityEnum,
+    NotificationChannelEnum,
+    NotificationStatusEnum,
+    NotificationCreate,
+    NotificationUpdate,
+    BulkNotificationCreate,
+    BulkNotificationResponse,
+    NotificationResponse,
+    NotificationListRequest,
+    NotificationListResponse,
+    NotificationPreferenceUpdate,
+    NotificationPreferenceResponse,
+    NotificationStatistics,
+    NotificationTemplateCreate,
+    NotificationTemplateUpdate,
+    NotificationTemplateResponse,
+    MarkNotificationsReadRequest,
+    MarkNotificationsReadResponse,
+)
+
+# ============================================================
+# CERTIFICATE SCHEMAS
+# ============================================================
+from .certificate import (
+    CertificateStatusEnum,
+    CertificateTemplateStatusEnum,
+    CertificateGenerationMethodEnum,
+    CertificateVerificationMethodEnum,
+    CertificateTemplateCreate,
+    CertificateTemplateUpdate,
+    CertificateTemplateResponse,
+    CertificateGenerate,
+    CertificateManualUpload,
+    CertificateRevoke,
+    CertificateVerify,
+    CertificateVerifyResponse,
+    CertificateBulkGenerate,
+    CertificateBulkGenerateResponse,
+    CertificateResponse,
+    CertificatePublicResponse,
+    CertificateListRequest,
+    CertificateListResponse,
+    CertificateStatistics,
+    CertificateShare,
+    CertificateShareResponse,
+)
+
+# ============================================================
+# ASSIGNMENT SCHEMAS
+# ============================================================
+from .assignment import (
+    AssignmentTypeEnum,
+    AssignmentStatusEnum,
+    SubmissionStatusEnum,
+    GradeStatusEnum,
+    AssignmentCreate,
+    AssignmentUpdate,
+    AssignmentPublish,
+    AssignmentSubmit,
+    AssignmentResubmit,
+    AssignmentGrade,
+    AssignmentResponse,
+    SubmissionResponse,
+    AssignmentDetailResponse,
+    AssignmentListRequest,
+    AssignmentListResponse,
+    SubmissionListRequest,
+    SubmissionListResponse,
+    AssignmentStatistics,
+    AssignmentCommentCreate,
+    AssignmentCommentResponse,
+)
+
+# ============================================================
+# FORUM SCHEMAS
+# ============================================================
+from .forum import (
+    TopicStatusEnum,
+    TopicTypeEnum,
+    ReplyStatusEnum,
+    ForumTopicCreate,
+    ForumTopicUpdate,
+    ForumTopicResponse,
+    ForumReplyCreate,
+    ForumReplyUpdate,
+    ForumReplyResponse,
+    ForumReplyLikeToggle,
+    ForumReplyLikeResponse,
+    ForumTopicFollowToggle,
+    ForumTopicFollowResponse,
+    ForumFlagCreate,
+    ForumFlagResponse,
+    ForumTopicDetailResponse,
+    ForumTopicListRequest,
+    ForumTopicListResponse,
+    ForumReplyListResponse,
+    ForumStatistics,
+)
+
+# ============================================================
+# REVIEW SCHEMAS
+# ============================================================
+from .review import (
+    ReviewStatusEnum,
+    ReviewTypeEnum,
+    ReviewCreate,
+    ReviewUpdate,
+    ReviewModerate,
+    ReviewResponse,
+    ReviewDetailResponse,
+    ReviewHelpfulVoteToggle,
+    ReviewHelpfulVoteResponse,
+    ReviewFlagCreate,
+    ReviewFlagResponse,
+    ReviewListRequest,
+    ReviewListResponse,
+    ReviewStatistics,
+    ReviewResponseCreate,
+    ReviewResponseUpdate,
+)
+
+# ============================================================
+# ANNOUNCEMENT SCHEMAS
+# ============================================================
+from .announcement import (
+    AnnouncementPriorityEnum,
+    AnnouncementStatusEnum,
+    AnnouncementTargetTypeEnum,
+    AnnouncementCreate,
+    AnnouncementUpdate,
+    AnnouncementPublish,
+    AnnouncementResponse,
+    AnnouncementReadResponse,
+    AnnouncementDetailResponse,
+    AnnouncementListRequest,
+    AnnouncementListResponse,
+    AnnouncementStatistics,
+    AnnouncementTemplateCreate,
+    AnnouncementTemplateUpdate,
+    AnnouncementTemplateResponse,
+    BulkAnnouncementCreate,
+    BulkAnnouncementResponse,
+)
+
+# ============================================================
+# LEARNING PATH SCHEMAS
+# ============================================================
+from .learning_path import (
+    LearningPathStatusEnum,
+    LearningPathLevelEnum,
+    PathEnrollmentStatusEnum,
+    LearningPathCreate,
+    LearningPathUpdate,
+    PathCourseCreate,
+    PathCourseUpdate,
+    PathEnrollmentCreate,
+    PathEnrollmentUpdate,
+    PathProgressUpdate,
+    PathCourseResponse,
+    LearningPathResponse,
+    PathEnrollmentResponse,
+    PathDetailResponse,
+    LearningPathListRequest,
+    LearningPathListResponse,
+    LearningPathStatistics,
+    PathReviewCreate,
+    PathReviewResponse,
+)
+
+# ============================================================
+# COUPON SCHEMAS
+# ============================================================
+from .coupon import (
+    CouponTypeEnum,
+    CouponStatusEnum,
+    CouponTargetTypeEnum,
+    CouponUsageStatusEnum,
+    CouponCreate,
+    CouponUpdate,
+    CouponApply,
+    CouponApplyResponse,
+    CouponResponse,
+    CouponUsageResponse,
+    CouponListRequest,
+    CouponListResponse,
+    CouponStatistics,
+    CouponBulkCreate,
+    CouponBulkResponse,
+)
+
+# ============================================================
+# CHAT SCHEMAS
+# ============================================================
+from .chat import (
+    ConversationTypeEnum,
+    MessageTypeEnum,
+    MessageStatusEnum,
+    ParticipantRoleEnum,
+    ConversationCreate,
+    ConversationUpdate,
+    ConversationResponse,
+    ParticipantAdd,
+    ParticipantRemove,
+    ParticipantUpdate,
+    ParticipantResponse,
+    MessageCreate,
+    MessageUpdate,
+    MessageResponse,
+    MessageReactionAdd,
+    MessageReactionRemove,
+    MessageReactionResponse,
+    MarkMessageRead,
+    MarkAllMessagesRead,
+    TypingIndicator,
+    CourseChatRoomResponse,
+    CourseChatMessageCreate,
+    CourseChatMessageResponse,
+    ChatListRequest,
+    ChatStatistics,
+)
+
+# ============================================================
+# SOFTWARE HOUSE SCHEMAS
+# ============================================================
+from .client import (
+    ClientStatusEnum,
+    ClientTypeEnum,
+    ClientIndustryEnum,
+    ContactRoleEnum,
+    ClientCreate,
+    ClientUpdate,
+    ClientContactCreate,
+    ClientContactUpdate,
+    ClientContactResponse,
+    ClientCommunicationCreate,
+    ClientCommunicationUpdate,
+    ClientCommunicationResponse,
+    ClientResponse,
+    ClientDetailResponse,
+    ClientListRequest,
+    ClientListResponse,
+    ClientStatistics,
+)
+
+from .project import (
+    ProjectStatusEnum,
+    ProjectPriorityEnum,
+    ProjectVisibilityEnum,
+    TaskStatusEnum,
+    TaskPriorityEnum,
+    TaskTypeEnum,
+    ProjectCreate,
+    ProjectUpdate,
+    ProjectAssignmentCreate,
+    ProjectAssignmentUpdate,
+    ProjectAssignmentResponse,
+    ProjectTaskCreate,
+    ProjectTaskUpdate,
+    ProjectTaskResponse,
+    TaskCommentCreate,
+    TaskCommentUpdate,
+    TaskCommentResponse,
+    TaskTimeEntryCreate,
+    TaskTimeEntryResponse,
+    ProjectResponse,
+    ProjectDetailResponse,
+    ProjectListRequest,
+    ProjectListResponse,
+    ProjectStatistics,
+    ProjectBulkAction,
+    TaskBulkUpdate,
+)
+
+from .invoice import (
+    InvoiceStatusEnum,
+    InvoiceTypeEnum,
+    InvoicePaymentMethodEnum,
+    InvoiceCreate,
+    InvoiceItemCreate,
+    InvoiceItemUpdate,
+    InvoiceItemResponse,
+    InvoiceUpdate,
+    InvoicePaymentCreate,
+    InvoicePaymentResponse,
+    InvoiceResponse,
+    InvoiceDetailResponse,
+    InvoiceListRequest,
+    InvoiceListResponse,
+    InvoiceStatistics,
+    InvoiceBulkAction,
+    InvoiceSendRequest,
+    InvoiceSendResponse,
+    InvoiceGenerateFromProject,
+    InvoiceSettingsUpdate,
+    InvoiceSettingsResponse,
+)
+
+# ============================================================
+# AI HUB SCHEMAS
+# ============================================================
+from .ai_agent import (
+    AIAgentStatusEnum,
+    AIAgentPricingTypeEnum,
+    AIAgentCategoryEnum,
+    AISubscriptionStatusEnum,
+    AITrainingDataTypeEnum,
+    AIApiKeyStatusEnum,
+    AIAgentCreate,
+    AIAgentUpdate,
+    AIAgentPublish,
+    AIAgentSubscribe,
+    AIAgentSubscriptionUpdate,
+    AIAgentSubscriptionCancel,
+    AITrainingDataCreate,
+    AITrainingDataUpdate,
+    AITrainingDataResponse,
+    AIApiKeyCreate,
+    AIApiKeyUpdate,
+    AIApiKeyRevoke,
+    AIApiKeyResponse,
+    AIApiLogResponse,
+    AIAgentResponse,
+    AIAgentDetailResponse,
+    AIAgentListRequest,
+    AIAgentListResponse,
+    AIAgentStatistics,
+    AIApiUsageStatistics,
+)
+
+# ============================================================
+# COMMON SCHEMAS
+# ============================================================
+from .common import (
+    BaseSchema,
+    BaseResponse,
+    PaginationParams,
+    PaginatedResponse,
+    StandardResponse,
+    ErrorResponse,
+    IDSchema,
+    IDsSchema,
+    DateRange,
+    DateTimeRange,
+    EnumSchema,
+    EnumListResponse,
+    BulkOperationResponse,
+    HealthCheckResponse,
 )
 
 # ============================================================
@@ -119,50 +590,107 @@ from .invitation import (
 # ============================================================
 
 __all__ = [
+    # Common
+    "BaseSchema",
+    "BaseResponse",
+    "PaginationParams",
+    "PaginatedResponse",
+    "StandardResponse",
+    "ErrorResponse",
+    "IDSchema",
+    "IDsSchema",
+    "DateRange",
+    "DateTimeRange",
+    "EnumSchema",
+    "EnumListResponse",
+    "BulkOperationResponse",
+    "HealthCheckResponse",
+    
     # Auth
-    "UserRegister",
-    "UserLogin",
+    "MFAType",
+    "DeviceType",
+    "AuthBase",
+    "RegisterRequest",
+    "LoginRequest",
+    "LoginResponse",
+    "MFASetupRequest",
+    "MFASetupResponse",
+    "MFAVerifyRequest",
+    "MFAVerifyResponse",
+    "MFADisableRequest",
     "TokenResponse",
-    "RefreshToken",
+    "RefreshTokenRequest",
     "TokenData",
-    "PasswordChange",
-    "PasswordReset",
-    "PasswordResetConfirm",
-    "EmailVerification",
-    "EmailVerificationConfirm",
+    "TokenIntrospectResponse",
+    "PasswordChangeRequest",
+    "ForgotPasswordRequest",
+    "ResetPasswordRequest",
+    "VerifyEmailRequest",
+    "VerifyEmailConfirmRequest",
+    "ResendVerificationRequest",
+    "LogoutRequest",
+    "LogoutAllDevicesRequest",
     "LogoutResponse",
+    "SessionInfo",
+    "SessionListResponse",
+    "RevokeSessionRequest",
+    "DeviceTrustRequest",
+    "DeviceTrustResponse",
+    "RateLimitStatus",
+    "AccountLockoutStatus",
     
     # User
     "UserRoleEnum",
+    "UserBase",
     "UserResponse",
+    "UserProfileResponse",
+    "UserAdminResponse",
     "UserUpdate",
     "UserRoleUpdate",
     "UserStatusUpdate",
+    "UserLockRequest",
+    "UserListRequest",
     "UserListResponse",
+    "AdminUserListResponse",
+    "BulkUserActionRequest",
+    "BulkUserActionResponse",
+    "UserStatistics",
     
     # Course
     "CourseStatusEnum",
+    "CourseLevelEnum",
+    "CourseCategoryEnum",
     "CourseBase",
     "CourseCreate",
     "CourseUpdate",
     "CourseResponse",
     "SessionSummary",
     "CourseDetailResponse",
+    "CourseListRequest",
     "CourseListResponse",
+    "CourseStatistics",
+    "CoursePublishRequest",
+    "CourseTeacherAssignment",
     
     # Session
     "SessionStatusEnum",
+    "SessionTypeEnum",
     "SessionBase",
     "SessionCreate",
     "SessionUpdate",
     "RecordingAdd",
     "SessionResponse",
     "SessionDetailResponse",
+    "SessionListRequest",
     "SessionListResponse",
+    "SessionStatistics",
+    "SessionZoomSync",
+    "SessionZoomSyncResponse",
     
     # Enrollment
     "EnrollmentStatusEnum",
     "PaymentMethodEnum",
+    "EnrollmentSourceEnum",
     "EnrollmentCreate",
     "EnrollmentUpdate",
     "PaymentVerification",
@@ -170,46 +698,373 @@ __all__ = [
     "EnrollmentResponse",
     "EnrollmentDetailResponse",
     "StudentEnrollmentResponse",
+    "EnrollmentListRequest",
     "EnrollmentListResponse",
+    "EnrollmentStatistics",
+    "EnrollmentBulkAction",
+    "EnrollmentExportRequest",
     
-    # Attendance ⭐
+    # Attendance
     "AttendanceStatusEnum",
+    "MarkedByEnum",
     "AttendanceMark",
     "AttendanceUpdate",
     "WatchRecording",
-    "BulkAttendanceMark",
+    "ZoomAttendanceSync",
+    "ZoomAttendanceData",
     "AttendanceResponse",
     "MissedSessionResponse",
     "AttendanceSummary",
     "StudentAttendanceSummary",
     "CourseAttendanceResponse",
+    "AttendanceListRequest",
     "AttendanceListResponse",
+    "AttendanceStatistics",
     
     # Payment
     "PaymentStatusEnum",
     "PaymentMethodSchemaEnum",
+    "PaymentTypeEnum",
+    "PaymentGatewayEnum",
     "PaymentInitiate",
     "PaymentUploadScreenshot",
     "PaymentVerify",
     "PaymentReject",
+    "PaymentRefund",
+    "PaymentRetry",
     "PaymentResponse",
     "PaymentHistoryResponse",
+    "PaymentListRequest",
     "PaymentListResponse",
     "PaymentSummary",
+    "PaymentWebhook",
+    "PaymentWebhookResponse",
     
     # Material
     "MaterialTypeEnum",
+    "MaterialVisibilityEnum",
     "MaterialUpload",
     "MaterialUpdate",
     "MaterialResponse",
+    "MaterialListRequest",
     "MaterialListResponse",
+    "MaterialBulkOperation",
+    "MaterialStatistics",
     
     # Invitation
+    "InvitationStatusEnum",
     "InviteTeacher",
     "AcceptInvitation",
     "ResendInvitation",
+    "RevokeInvitation",
     "InvitationResponse",
     "InvitationDetailResponse",
+    "InvitationListRequest",
     "InvitationListResponse",
     "InvitationSummary",
+    "BulkInvitation",
+    "BulkInvitationResponse",
+    "InvitationReminder",
+    
+    # Application
+    "ApplicationStatusEnum",
+    "ApplicationSourceEnum",
+    "ApplicationPriorityEnum",
+    "ApplicationSubmit",
+    "ApplicationUpdateStatus",
+    "ApplicationResponse",
+    "ApplicationListRequest",
+    "ApplicationListResponse",
+    "ApplicationStats",
+    "ApplicationFollowUp",
+    "ApplicationBulkAction",
+    "ApplicationConvertRequest",
+    
+    # Notification
+    "NotificationTypeEnum",
+    "NotificationPriorityEnum",
+    "NotificationChannelEnum",
+    "NotificationStatusEnum",
+    "NotificationCreate",
+    "NotificationUpdate",
+    "BulkNotificationCreate",
+    "BulkNotificationResponse",
+    "NotificationResponse",
+    "NotificationListRequest",
+    "NotificationListResponse",
+    "NotificationPreferenceUpdate",
+    "NotificationPreferenceResponse",
+    "NotificationStatistics",
+    "NotificationTemplateCreate",
+    "NotificationTemplateUpdate",
+    "NotificationTemplateResponse",
+    "MarkNotificationsReadRequest",
+    "MarkNotificationsReadResponse",
+    
+    # Certificate
+    "CertificateStatusEnum",
+    "CertificateTemplateStatusEnum",
+    "CertificateGenerationMethodEnum",
+    "CertificateVerificationMethodEnum",
+    "CertificateTemplateCreate",
+    "CertificateTemplateUpdate",
+    "CertificateTemplateResponse",
+    "CertificateGenerate",
+    "CertificateManualUpload",
+    "CertificateRevoke",
+    "CertificateVerify",
+    "CertificateVerifyResponse",
+    "CertificateBulkGenerate",
+    "CertificateBulkGenerateResponse",
+    "CertificateResponse",
+    "CertificatePublicResponse",
+    "CertificateListRequest",
+    "CertificateListResponse",
+    "CertificateStatistics",
+    "CertificateShare",
+    "CertificateShareResponse",
+    
+    # Assignment
+    "AssignmentTypeEnum",
+    "AssignmentStatusEnum",
+    "SubmissionStatusEnum",
+    "GradeStatusEnum",
+    "AssignmentCreate",
+    "AssignmentUpdate",
+    "AssignmentPublish",
+    "AssignmentSubmit",
+    "AssignmentResubmit",
+    "AssignmentGrade",
+    "AssignmentResponse",
+    "SubmissionResponse",
+    "AssignmentDetailResponse",
+    "AssignmentListRequest",
+    "AssignmentListResponse",
+    "SubmissionListRequest",
+    "SubmissionListResponse",
+    "AssignmentStatistics",
+    "AssignmentCommentCreate",
+    "AssignmentCommentResponse",
+    
+    # Forum
+    "TopicStatusEnum",
+    "TopicTypeEnum",
+    "ReplyStatusEnum",
+    "ForumTopicCreate",
+    "ForumTopicUpdate",
+    "ForumTopicResponse",
+    "ForumReplyCreate",
+    "ForumReplyUpdate",
+    "ForumReplyResponse",
+    "ForumReplyLikeToggle",
+    "ForumReplyLikeResponse",
+    "ForumTopicFollowToggle",
+    "ForumTopicFollowResponse",
+    "ForumFlagCreate",
+    "ForumFlagResponse",
+    "ForumTopicDetailResponse",
+    "ForumTopicListRequest",
+    "ForumTopicListResponse",
+    "ForumReplyListResponse",
+    "ForumStatistics",
+    
+    # Review
+    "ReviewStatusEnum",
+    "ReviewTypeEnum",
+    "ReviewCreate",
+    "ReviewUpdate",
+    "ReviewModerate",
+    "ReviewResponse",
+    "ReviewDetailResponse",
+    "ReviewHelpfulVoteToggle",
+    "ReviewHelpfulVoteResponse",
+    "ReviewFlagCreate",
+    "ReviewFlagResponse",
+    "ReviewListRequest",
+    "ReviewListResponse",
+    "ReviewStatistics",
+    "ReviewResponseCreate",
+    "ReviewResponseUpdate",
+    
+    # Announcement
+    "AnnouncementPriorityEnum",
+    "AnnouncementStatusEnum",
+    "AnnouncementTargetTypeEnum",
+    "AnnouncementCreate",
+    "AnnouncementUpdate",
+    "AnnouncementPublish",
+    "AnnouncementResponse",
+    "AnnouncementReadResponse",
+    "AnnouncementDetailResponse",
+    "AnnouncementListRequest",
+    "AnnouncementListResponse",
+    "AnnouncementStatistics",
+    "AnnouncementTemplateCreate",
+    "AnnouncementTemplateUpdate",
+    "AnnouncementTemplateResponse",
+    "BulkAnnouncementCreate",
+    "BulkAnnouncementResponse",
+    
+    # Learning Path
+    "LearningPathStatusEnum",
+    "LearningPathLevelEnum",
+    "PathEnrollmentStatusEnum",
+    "LearningPathCreate",
+    "LearningPathUpdate",
+    "PathCourseCreate",
+    "PathCourseUpdate",
+    "PathEnrollmentCreate",
+    "PathEnrollmentUpdate",
+    "PathProgressUpdate",
+    "PathCourseResponse",
+    "LearningPathResponse",
+    "PathEnrollmentResponse",
+    "PathDetailResponse",
+    "LearningPathListRequest",
+    "LearningPathListResponse",
+    "LearningPathStatistics",
+    "PathReviewCreate",
+    "PathReviewResponse",
+    
+    # Coupon
+    "CouponTypeEnum",
+    "CouponStatusEnum",
+    "CouponTargetTypeEnum",
+    "CouponUsageStatusEnum",
+    "CouponCreate",
+    "CouponUpdate",
+    "CouponApply",
+    "CouponApplyResponse",
+    "CouponResponse",
+    "CouponUsageResponse",
+    "CouponListRequest",
+    "CouponListResponse",
+    "CouponStatistics",
+    "CouponBulkCreate",
+    "CouponBulkResponse",
+    
+    # Chat
+    "ConversationTypeEnum",
+    "MessageTypeEnum",
+    "MessageStatusEnum",
+    "ParticipantRoleEnum",
+    "ConversationCreate",
+    "ConversationUpdate",
+    "ConversationResponse",
+    "ParticipantAdd",
+    "ParticipantRemove",
+    "ParticipantUpdate",
+    "ParticipantResponse",
+    "MessageCreate",
+    "MessageUpdate",
+    "MessageResponse",
+    "MessageReactionAdd",
+    "MessageReactionRemove",
+    "MessageReactionResponse",
+    "MarkMessageRead",
+    "MarkAllMessagesRead",
+    "TypingIndicator",
+    "CourseChatRoomResponse",
+    "CourseChatMessageCreate",
+    "CourseChatMessageResponse",
+    "ChatListRequest",
+    "ChatStatistics",
+    
+    # Software House - Client
+    "ClientStatusEnum",
+    "ClientTypeEnum",
+    "ClientIndustryEnum",
+    "ContactRoleEnum",
+    "ClientCreate",
+    "ClientUpdate",
+    "ClientContactCreate",
+    "ClientContactUpdate",
+    "ClientContactResponse",
+    "ClientCommunicationCreate",
+    "ClientCommunicationUpdate",
+    "ClientCommunicationResponse",
+    "ClientResponse",
+    "ClientDetailResponse",
+    "ClientListRequest",
+    "ClientListResponse",
+    "ClientStatistics",
+    
+    # Software House - Project
+    "ProjectStatusEnum",
+    "ProjectPriorityEnum",
+    "ProjectVisibilityEnum",
+    "TaskStatusEnum",
+    "TaskPriorityEnum",
+    "TaskTypeEnum",
+    "ProjectCreate",
+    "ProjectUpdate",
+    "ProjectAssignmentCreate",
+    "ProjectAssignmentUpdate",
+    "ProjectAssignmentResponse",
+    "ProjectTaskCreate",
+    "ProjectTaskUpdate",
+    "ProjectTaskResponse",
+    "TaskCommentCreate",
+    "TaskCommentUpdate",
+    "TaskCommentResponse",
+    "TaskTimeEntryCreate",
+    "TaskTimeEntryResponse",
+    "ProjectResponse",
+    "ProjectDetailResponse",
+    "ProjectListRequest",
+    "ProjectListResponse",
+    "ProjectStatistics",
+    "ProjectBulkAction",
+    "TaskBulkUpdate",
+    
+    # Software House - Invoice
+    "InvoiceStatusEnum",
+    "InvoiceTypeEnum",
+    "InvoicePaymentMethodEnum",
+    "InvoiceCreate",
+    "InvoiceItemCreate",
+    "InvoiceItemUpdate",
+    "InvoiceItemResponse",
+    "InvoiceUpdate",
+    "InvoicePaymentCreate",
+    "InvoicePaymentResponse",
+    "InvoiceResponse",
+    "InvoiceDetailResponse",
+    "InvoiceListRequest",
+    "InvoiceListResponse",
+    "InvoiceStatistics",
+    "InvoiceBulkAction",
+    "InvoiceSendRequest",
+    "InvoiceSendResponse",
+    "InvoiceGenerateFromProject",
+    "InvoiceSettingsUpdate",
+    "InvoiceSettingsResponse",
+    
+    # AI Hub
+    "AIAgentStatusEnum",
+    "AIAgentPricingTypeEnum",
+    "AIAgentCategoryEnum",
+    "AISubscriptionStatusEnum",
+    "AITrainingDataTypeEnum",
+    "AIApiKeyStatusEnum",
+    "AIAgentCreate",
+    "AIAgentUpdate",
+    "AIAgentPublish",
+    "AIAgentSubscribe",
+    "AIAgentSubscriptionUpdate",
+    "AIAgentSubscriptionCancel",
+    "AITrainingDataCreate",
+    "AITrainingDataUpdate",
+    "AITrainingDataResponse",
+    "AIApiKeyCreate",
+    "AIApiKeyUpdate",
+    "AIApiKeyRevoke",
+    "AIApiKeyResponse",
+    "AIApiLogResponse",
+    "AIAgentResponse",
+    "AIAgentDetailResponse",
+    "AIAgentListRequest",
+    "AIAgentListResponse",
+    "AIAgentStatistics",
+    "AIApiUsageStatistics",
 ]
